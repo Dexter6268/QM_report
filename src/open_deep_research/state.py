@@ -1,4 +1,4 @@
-from typing import Annotated, List, TypedDict, Literal
+from typing_extensions import Annotated, List, TypedDict, Literal
 from pydantic import BaseModel, Field
 import operator
 
@@ -25,7 +25,7 @@ class Sections(BaseModel):
     )
 
 class SearchQuery(BaseModel):
-    search_query: str = Field(None, description="Query for web search.")
+    search_query: str = Field('', description="Query for web search.")
 
 class Queries(BaseModel):
     queries: List[SearchQuery] = Field(

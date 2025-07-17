@@ -50,6 +50,9 @@ htmlcov/
 *.log
 logs/
 
+$ jupyter notebook
+learn.ipynb
+
 # Local development
 .env.local
 .env.development.local

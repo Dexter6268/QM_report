@@ -13,6 +13,8 @@ from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast
 from urllib.parse import unquote
 from collections import defaultdict
 import itertools
+import logging
+import chardet
 
 from exa_py import Exa
 from linkup import LinkupClient
@@ -44,7 +46,9 @@ from open_deep_research.prompts import SUMMARIZATION_PROMPT
 
 import tiktoken
 
-def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
+
+
+async def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
     """Helper function to reduce the length of a string to fit within a token limit.
 
     Args:
@@ -54,13 +58,15 @@ def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
     Returns:
         str: reduced string that fits within the token limit.
     """
-    encoder = tiktoken.get_encoding("cl100k_base")  # DeepSeek/OpenAI 使用类似的分词器
+    async def get_encoding_async():
+        return await asyncio.to_thread(tiktoken.get_encoding, "cl100k_base")
+    encoder = await get_encoding_async() # DeepSeek/OpenAI 使用类似的分词器
     token_count = len(encoder.encode(input_string))
-    print(f"输入字符串的 Token 数: {token_count}")
+    logging.info(f"输入字符串的 Token 数: {token_count}")
     if token_count > max_tokens:
         len_str = int(max_tokens / token_count * len(input_string))
         input_string = input_string[:len_str]
-        print(f"超过最大限制 {max_tokens}，已缩减字符串长度到 {len_str} 字符")
+        logging.warning(f"超过最大限制 {max_tokens}，已缩减字符串长度到 {len_str} 字符")
     return input_string
 
 def get_config_value(value):
@@ -172,25 +178,29 @@ def deduplicate_and_format_sources(
 
 def format_sections(sections: list[Section]) -> str:
     """ Format a list of sections into a string """
-    formatted_str = ""
-    for idx, section in enumerate(sections, 1):
-        formatted_str += f"""
-{'='*60}
-Section {idx}: {section.name}
-{'='*60}
-Description:
-{section.description}
-Requires Research: 
-{section.research}
+    chapter_no = set()
+    i = 0
+    k = 0
+    sections_str = ""
+    for j, section in enumerate(sections):
+        if section.chapter_name not in chapter_no:
+            chapter_no.add(section.chapter_name)
+            i += 1
+            k = j
+            sections_str += f"#第{i}章 {section.chapter_name}\n" + f"##第{j + 1 - k}节 {section.name}\n" + f"###概要: {section.description}\n" + f"###内容：{section.content if section.content else '[未完成]'}\n"
+        else:
+            sections_str += f"##第{j + 1 - k}节 {section.name}\n" + f"###概要: {section.description}\n" + f"###内容：{section.content if section.content else '[未完成]'}\n"
+    return sections_str
 
-Content:
-{section.content if section.content else '[Not yet written]'}
 
-"""
-    return formatted_str
 
 @traceable
-async def tavily_search_async(search_queries, max_results: int = 5, topic: Literal["general", "news", "finance"] = "general", include_raw_content: bool = True):
+async def tavily_search_async(
+    search_queries,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = True
+):
     """
     Performs concurrent web searches with the Tavily API
 
@@ -201,39 +211,96 @@ async def tavily_search_async(search_queries, max_results: int = 5, topic: Liter
         include_raw_content (bool): Whether to include raw content in the results
 
     Returns:
-            List[dict]: List of search responses from Tavily API:
-                {
-                    'query': str,
-                    'follow_up_questions': None,      
-                    'answer': None,
-                    'images': list,
-                    'results': [                     # List of search results
-                        {
-                            'title': str,            # Title of the webpage
-                            'url': str,              # URL of the result
-                            'content': str,          # Summary/snippet of content
-                            'score': float,          # Relevance score
-                            'raw_content': str|None  # Full page content if available
-                        },
-                        ...
-                    ]
-                }
+        List[dict]: List of search responses from Tavily API:
+            {
+                'query': str,
+                'follow_up_questions': None,      
+                'answer': None,
+                'images': list,
+                'results': [                     # List of search results
+                    {
+                        'title': str,            # Title of the webpage
+                        'url': str,              # URL of the result
+                        'content': str,          # Summary/snippet of content
+                        'score': float,          # Relevance score
+                        'raw_content': str|None  # Full page content if available
+                    },
+                    ...
+                ]
+            }
     """
     tavily_async_client = AsyncTavilyClient()
     search_tasks = []
-    for query in search_queries:
-            search_tasks.append(
-                tavily_async_client.search(
-                    query,
-                    max_results=max_results,
-                    include_raw_content=include_raw_content,
-                    topic=topic,
-                    timeout=300
-                )
-            )
 
-    # Execute all searches concurrently
+    async def safe_search(query):
+        try:
+            logging.debug(f"Starting Tavily search for query: {query}")
+            result = await tavily_async_client.search(
+                query,
+                max_results=max_results,
+                include_raw_content=True,
+                include_images=False,
+                topic=topic,
+                timeout=300
+            )
+            logging.debug(f"Completed Tavily search for query: {query}")
+
+            # # Efficiently re-fetch all URLs and replace raw_content
+            # async def fetch_raw_content(url):
+            #     try:
+            #         async with aiohttp.ClientSession() as session:
+            #             async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            #                 if resp.status == 200:
+            #                     content_type = resp.headers.get('Content-Type', '').lower()
+            #                     raw_bytes = await resp.read()
+            #                     # Use chardet to detect encoding, fallback to utf-8
+            #                     detected = chardet.detect(raw_bytes)
+            #                     encoding = detected.get('encoding', 'utf-8')
+            #                     try:
+            #                         text = raw_bytes.decode(encoding, errors='replace')
+            #                     except Exception as e:
+            #                         text = raw_bytes.decode('utf-8', errors='replace')
+            #                     if 'text/html' in content_type:
+            #                         logging.info(f"Fetching raw content from {url} with encoding {encoding}")
+            #                         return text
+            #                     else:
+            #                         return f"[Non-HTML content: {content_type}]"
+            #                 else:
+            #                     return f"[Error: status {resp.status}]"
+            #     except Exception as e:
+            #         return f"[Error fetching content: {str(e)}]"
+
+            # # Prepare tasks for all URLs
+            # fetch_tasks = []
+            # for res in result.get('results', []):
+            #     fetch_tasks.append(fetch_raw_content(res.get('url', '')))
+
+            # # Run all fetches concurrently
+            # new_contents = await asyncio.gather(*fetch_tasks)
+
+            # # Replace raw_content for each result
+            # for res, new_content in zip(result.get('results', []), new_contents):
+            #     res['raw_content'] = new_content
+
+            return result
+        except Exception as e:
+            logging.error(f"Tavily search failed for query '{query}': {str(e)}", exc_info=True)
+            # Return a placeholder result to keep index alignment
+            return {
+                'query': query,
+                'follow_up_questions': None,
+                'answer': None,
+                'images': [],
+                'results': [],
+                'error': str(e)
+            }
+
+    for query in search_queries:
+        search_tasks.append(safe_search(query))
+
+    logging.debug(f"Starting {len(search_tasks)} concurrent Tavily searches with max_results={max_results}, topic={topic}, include_raw_content={include_raw_content}")
     search_docs = await asyncio.gather(*search_tasks)
+    logging.debug(f"Completed {len(search_docs)} Tavily searches")
     return search_docs
 
 @traceable
@@ -1386,7 +1453,7 @@ async def tavily_search(
     queries: List[str],
     max_results: Annotated[int, InjectedToolArg] = 5,
     topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
-    max_tokens: int = 30000,
+    max_tokens: int = 5000,
     config: RunnableConfig = None
 ) -> str:
     """
@@ -1409,7 +1476,7 @@ async def tavily_search(
     )
 
     # Format the search results directly using the raw_content already provided
-    formatted_output = f"搜索结果: \n\n"
+    formatted_output = f"\n搜索结果: \n\n"
     
     # Deduplicate results by URL
     unique_results = {}
@@ -1432,6 +1499,7 @@ async def tavily_search(
         else:
             extra_kwargs = get_config_value(configurable.summarization_model_kwargs or {})
 
+        logging.debug(f"Using summarization model: {configurable.summarization_model}")
         summarization_model = init_chat_model(
             model=configurable.summarization_model,
             model_provider=configurable.summarization_model_provider,
@@ -1443,11 +1511,12 @@ async def tavily_search(
             if not result.get("raw_content"):
                 summarization_tasks.append(noop())
             else:
-                reduced_str = reduce_source_str(result['raw_content'], max_tokens = max_tokens)
+                reduced_str = await reduce_source_str(result['raw_content'], max_tokens=max_tokens)
                 summarization_tasks.append(summarize_webpage(summarization_model, reduced_str))
             
-        
+        logging.debug(f"Summarizing {len(summarization_tasks)} search results with model {configurable.summarization_model}")
         summaries = await asyncio.gather(*summarization_tasks)
+        logging.debug("Summarization completed, stitching results together.")
         unique_results = {
             url: {'title': result['title'], 'content': result['content'] if summary is None else summary}
             for url, result, summary in zip(unique_results.keys(), unique_results.values(), summaries)
@@ -1472,7 +1541,7 @@ async def tavily_search(
         formatted_output += f"URL: {url}\n\n"
         formatted_output += f"SUMMARY:\n{result['content']}\n\n"
         if result.get('raw_content'):
-            formatted_output += f"FULL CONTENT:\n{result['raw_content'][:max_char_to_include]}"  # Limit content size
+            formatted_output += f"FULL CONTENT:\n{result['raw_content'][:(max_char_to_include//len(unique_results))]}"  # Limit content size
         formatted_output += "\n\n" + "-" * 80 + "\n"
     
     if unique_results:
@@ -1526,7 +1595,7 @@ async def azureaisearch_search(queries: List[str], max_results: int = 5, topic: 
         return "No valid search results found. Please try different search queries or use a different search API."
 
 
-async def select_and_execute_search(search_api: str, query_list: list[str], params_to_pass: dict) -> str:
+async def select_and_execute_search(search_api: str, query_list: list[str], params_to_pass: dict, max_tokens: int=5000) -> str:
     """Select and execute the appropriate search API.
     
     Args:
@@ -1543,7 +1612,7 @@ async def select_and_execute_search(search_api: str, query_list: list[str], para
     if search_api == "tavily":
         # Tavily search tool used with both workflow and agent 
         # and returns a formatted source string
-        return await tavily_search.ainvoke({'queries': query_list, **params_to_pass})
+        return await tavily_search.ainvoke({'queries': query_list, **params_to_pass, "max_tokens": max_tokens})
     elif search_api == "duckduckgo":
         # DuckDuckGo search tool used with both workflow and agent 
         return await duckduckgo_search.ainvoke({'search_queries': query_list})
@@ -1582,13 +1651,14 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
                 "text": user_input_content,
                 "cache_control": {"type": "ephemeral", "ttl": "1h"}
             }]
-
+        logging.debug(f"Summarizing webpage content{webpage_content[:100]}...")  # Log first 100 chars for context
         summary = await model.with_structured_output(Summary).with_retry(stop_after_attempt=2).ainvoke([
             {"role": "system", "content": SUMMARIZATION_PROMPT.format(webpage_content=webpage_content)},
             {"role": "user", "content": user_input_content},
         ])
+        logging.debug("Webpage content{webpage_content[:100]} summarized successfully.")
     except:
-        print("Failed to summarize webpage content, returning raw content instead.")
+        logging.error("Failed to summarize webpage content{webpage_content[:100]}, returning raw content instead.")
         # fall back on the raw content
         return webpage_content
 
@@ -1668,3 +1738,67 @@ async def load_mcp_server_config(path: str) -> dict:
 
     config = await asyncio.to_thread(_load)
     return config
+
+async def main():
+
+
+    
+    queries=keywords = [
+    # 第一章 产品质量发展现状
+    ["2024湖南制造业质量合格率 省统计局", "湖南省质量强省政策2024"],  # 第一节 总体概况
+    ["湖南14地市制造业质量排名", "长株潭衡制造业经济带数据"],  # 第二节 地区概况  
+    ["湖南制造业细分行业合格率", "省质检局行业抽检白皮书"],  # 第三节 行业概况
+
+    # 第二章 地区产品质量状况（全省14个地州市）
+    ["长沙工程机械合格率2024", "长沙智能网联汽车质检"],  # 长沙市
+    ["株洲轨道交通产品抽检", "株洲航空发动机质量缺陷"],  # 株洲市
+    ["湘潭电机质量分析报告", "湘钢特种钢材合格率"],  # 湘潭市
+    ["衡阳输变电设备质量", "衡阳钢管质检问题"],  # 衡阳市
+    ["邵阳发制品行业抽检", "邵阳箱包出口质量"],  # 邵阳市
+    ["岳阳石化产品合格率", "岳阳粮油加工质量"],  # 岳阳市
+    ["常德烟草制品质量", "常德纺织业甲醛超标"],  # 常德市
+    ["张家界旅游商品质量", "莓茶农残检测"],  # 张家界市
+    ["益阳电容器合格率", "安化黑茶重金属"],  # 益阳市
+    ["郴州有色金属质检", "永兴白银纯度问题"],  # 郴州市
+    ["永州农产品加工质量", "永州锰制品合格率"],  # 永州市
+    ["怀化中医药材质量", "靖州杨梅罐头抽检"],  # 怀化市
+    ["娄底钢铁新材料质量", "冷水江锑品合格率"],  # 娄底市
+    ["湘西州矿产品质检", "酒鬼酒塑化剂事件"],  # 湘西州
+
+    # 第三章 行业产品质量状况
+    ["湖南工程机械故障率", "三一重工焊缝缺陷统计"],  # 装备制造业
+    ["湖南有色冶金行业标准", "株冶集团锌锭纯度"],  # 资源加工业
+    ["湖南预制菜微生物超标", "槟榔食品添加剂"],  # 食药类行业
+    ["醴陵陶瓷铅镉迁移", "浏阳花炮爆炸事故"],  # 消费品工业
+    ["湖南电子信息产品检测", "半导体器件失效分析"],  # 新兴产业
+
+    # 第四章 问题分析
+    ["湖南制造业质检设备缺口", "中小企业实验室配置率"],  # 检测能力不足
+    ["原材料波动影响案例", "湖南钢铁价格传导机制"],  # 供应链问题
+    ["职业打假人投诉热点", "直播带货质量纠纷"],  # 新业态风险
+    ["环保标准提升影响", "VOCs排放整改成本"],  # 政策合规压力
+
+    # 第五章 政策建议
+    ["湖南智能检测设备补贴", "工业CT应用示范"],  # 技术升级
+    ["产业链质量协同机制", "主机厂-供应商联检"],  # 体系优化
+    ["质量信用ABCD分级", "湖南企业黑名单公示"],  # 监管创新
+    ["湘籍质检人才培养", "职业院校检测专业"],  # 人才建设
+    ["质量品牌提升计划", "湖南制造国际认证"]  # 品牌战略
+    ]
+    search_tasks = [tavily_search.ainvoke({'queries': query, 'max_results': 2}) for query in queries]
+    
+    responses = await asyncio.gather(*search_tasks)
+    for response in responses:
+        logging.info('\n'+'-'* 80)
+        logging.info(response[:min(1000, len(response))] + '...\n\n')
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s | %(filename)s | %(funcName)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        filename="log.txt",
+        encoding='utf-8', 
+        filemode="w"
+    )
+    asyncio.run(main())

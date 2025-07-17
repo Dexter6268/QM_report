@@ -51,6 +51,7 @@ class WorkflowConfiguration:
     writer_provider: str = "deepseek"
     writer_model: str = "deepseek-chat"
     writer_model_kwargs: Optional[Dict[str, Any]] = None
+    max_tokens: int = 5000 # Maximum tokens for each section of the report
 
     @classmethod
     def from_runnable_config(cls, config: Optional[RunnableConfig] = None) -> "WorkflowConfiguration":

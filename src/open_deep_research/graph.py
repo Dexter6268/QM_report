@@ -1,13 +1,14 @@
 import sys
+import logging
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
-from langgraph.constants import Send
+# from langgraph.constants import Send
 from langgraph.graph import START, END, StateGraph
-from langgraph.types import interrupt, Command
+from langgraph.types import interrupt, Command, Send
 
 from open_deep_research.state import (
     ReportStateInput,
@@ -104,11 +105,12 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
 
     # Search the web with parameters
     source_str = await select_and_execute_search(search_api, query_list, params_to_pass)
+    source_str = await reduce_source_str(source_str, max_tokens=10000) 
     # Format system instructions
     system_instructions_sections = report_planner_instructions.format(
         topic=topic, 
         report_organization=report_structure, 
-        context=reduce_source_str(source_str, max_tokens=15000), 
+        context=source_str, 
         feedback=feedback
     )
         
@@ -185,7 +187,8 @@ def human_feedback(state: ReportState, config: RunnableConfig) -> Command[Litera
     \n该报告框架是否符合您的需求？\n输入'true'以确认采用该报告框架。\n或提供修改意见以重新生成报告框架："""
     
     feedback = interrupt(interrupt_message)
-
+    if isinstance(feedback, dict):
+        feedback = list(feedback.values())[0]  # Get the first value if feedback is a dict
     # If the user approves the report plan, kick off section writing
     if isinstance(feedback, bool) and feedback is True:
         # Treat this as approve and kick off section writing
@@ -235,13 +238,14 @@ async def generate_queries(state: SectionState, config: RunnableConfig):
     # Format system instructions
     system_instructions = query_writer_instructions.format(topic=topic, 
                                                            chapter_name=section.chapter_name,
+                                                           section_name=section.name,
                                                            section_topic=section.description, 
                                                            number_of_queries=number_of_queries,
                                                            today=get_today_str())
 
     # Generate queries  
     queries = await structured_llm.ainvoke([SystemMessage(content=system_instructions),
-                                     HumanMessage(content="Generate search queries on the provided topic.")])
+                                     HumanMessage(content="针对给定的系统提示生成浏览器搜索的关键词或语句")])
 
     return {"search_queries": queries.queries}
 
@@ -269,16 +273,16 @@ async def search_web(state: SectionState, config: RunnableConfig):
     search_api = get_config_value(configurable.search_api)
     search_api_config = configurable.search_api_config or {}  # Get the config dict, default to empty
     params_to_pass = get_search_params(search_api, search_api_config)  # Filter parameters
-
+    max_tokens = configurable.max_tokens
     # Web search
     query_list = [query.search_query for query in search_queries]
 
     # Search the web with parameters
-    source_str = await select_and_execute_search(search_api, query_list, params_to_pass)
-    source_str = reduce_source_str(source_str, max_tokens=30000)  # Reduce source string if too long
+    source_str = await select_and_execute_search(search_api, query_list, params_to_pass, max_tokens=max_tokens)
+    source_str = await reduce_source_str(source_str, max_tokens=max_tokens)  # Reduce source string if too long
     return {"source_str": source_str, "search_iterations": state["search_iterations"] + 1}
 
-async def write_section(state: SectionState, config: RunnableConfig) -> Command[Literal[END, "search_web"]]:
+async def write_section(state: SectionState, config: RunnableConfig) -> Command[[END, "search_web"]]:
     """Write a section of the report and evaluate if more research is needed.
     
     This node:
@@ -329,6 +333,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command[
     
     section_grader_instructions_formatted = section_grader_instructions.format(topic=topic, 
                                                                                chapter_name=section.chapter_name,
+                                                                               section_name=section.name,
                                                                                section_topic=section.description,
                                                                                section=section.content, 
                                                                                number_of_follow_up_queries=configurable.number_of_queries)
@@ -403,7 +408,7 @@ async def write_final_sections(state: SectionState, config: RunnableConfig):
     writer_model = init_chat_model(model=writer_model_name, model_provider=writer_provider, **writer_model_kwargs) 
     
     section_content = await writer_model.ainvoke([SystemMessage(content=system_instructions),
-                                           HumanMessage(content="Generate a report section based on the provided sources.")])
+                                           HumanMessage(content="根据给定的系统提示撰写报告节内容")])
     
     # Write content to section 
     section.content = section_content.content
@@ -459,7 +464,7 @@ def compile_final_report(state: ReportState, config: RunnableConfig):
         section.content = completed_sections[section.name]
 
     # Compile final report
-    all_sections = "\n\n".join([s.content for s in sections])
+    all_sections = format_sections(sections)
 
     if configurable.include_source_str:
         return {"final_report": all_sections, "source_str": state["source_str"]}
