@@ -1,264 +1,292 @@
-report_planner_query_writer_instructions="""You are performing research for a report. 
+report_planner_query_writer_instructions="""你正在为一份研究报告进行资料搜集。
 
-<Report topic>
+<报告主题>
 {topic}
-</Report topic>
+</报告主题>
 
-<Report organization>
+<报告结构>
 {report_organization}
-</Report organization>
+</报告结构>
 
-<Task>
-Your goal is to generate {number_of_queries} web search queries that will help gather information for planning the report sections. 
+<任务>
+你的目标是生成{number_of_queries}个网络搜索查询，这些查询将有助于收集信息来规划报告的各个部分。
 
-The queries should:
+注意！！！报告中的章标题不需要研究，只有下属的节需要研究。
+这些查询应该：
 
-1. Be related to the Report topic
-2. Help satisfy the requirements specified in the report organization
+与报告主题相关
+有助于满足报告结构中指定的要求
+确保查询足够具体，既能找到高质量的相关资料来源，又能覆盖报告结构所需的广度。
+</任务>
 
-Make the queries specific enough to find high-quality, relevant sources while covering the breadth needed for the report structure.
-</Task>
+<格式要求>
+调用Queries工具
+</格式要求>
 
-<Format>
-Call the Queries tool 
-</Format>
-
-Today is {today}
+今天是{today}
 """
 
-report_planner_instructions="""I want a plan for a report that is concise and focused.
+report_planner_instructions="""
 
-<Report topic>
-The topic of the report is:
+<Task>
+我需要一个简洁且重点突出的报告框架方案。
+
+<报告主题>
+报告主题为：
 {topic}
-</Report topic>
+</报告主题>
 
-<Report organization>
-The report should follow this organization: 
+<报告结构>
+本报告应采用以下组织结构（注意！！！报告中的章标题不需要研究，只有下属的节需要研究。）：
 {report_organization}
-</Report organization>
+</报告结构>
 
-<Context>
-Here is context to use to plan the sections of the report: 
+<背景信息>
+以下是用于规划报告章节的背景信息：
 {context}
-</Context>
+</背景信息>
 
-<Task>
-Generate a list of sections for the report. Your plan should be tight and focused with NO overlapping sections or unnecessary filler. 
+<任务要求>
+生成报告章节清单。方案必须精炼聚焦，避免章节重叠或冗余内容。
 
-For example, a good report structure might look like:
-1/ intro
-2/ overview of topic A
-3/ overview of topic B
-4/ comparison between A and B
-5/ conclusion
+优秀报告结构示例：
+1/ 产品质量发展现状
+1.1/ 总体概况
+1.2/ 地区概况
+1.3/ 行业概况
+2/ 地区产品质量状况
+2.1/ 地区A
+2.2/ 地区B
+...
+2.26/ 地区Z
+3/ 行业产品质量状况
+3.1/ A行业
+3.2/ B行业
+3.3/ C行业
+4/ 问题分析
+4.1/ 支柱产业承压下滑，质量管控短板突出
+4.2/ 区域质量发展失衡，湘西地区水平落后
+4.3/ 新兴产业波动加剧，质量稳定有待加强
+4.4/ 小型企业基础薄弱，存在质量安全隐患
+5/ 政策建议
+5.1/ 优化完善市场监管手段措施，防范化解重点领域质量风险问题
+5.2/ 深入推进质量强企强链强县建设，提升产业链韧性及区域发展协同性
+5.3/ 构建高水平质量基础设施建设体系，发挥服务质量提升的支撑保障作用
 
-Each section should have the fields:
+每个节需包含以下字段：
 
-- Name - Name for this section of the report.
-- Description - Brief overview of the main topics covered in this section.
-- Research - Whether to perform web research for this section of the report. IMPORTANT: Main body sections (not intro/conclusion) MUST have Research=True. A report must have AT LEAST 2-3 sections with Research=True to be useful.
-- Content - The content of the section, which you will leave blank for now.
+- name - 该节标题
+- chapter_name - 该节所属章标题
+- description - 本章节主要内容的简要说明
+- research - 是否需进行网络调研（关键要求：主体章节[非引言/结论]必须设置Research=True。有效报告至少需包含2-3个需调研章节）
+- content - 章节具体内容（暂留空）
+整合准则：
 
-Integration guidelines:
-- Include examples and implementation details within main topic sections, not as separate sections
-- Ensure each section has a distinct purpose with no content overlap
-- Combine related concepts rather than separating them
-- CRITICAL: Every section MUST be directly relevant to the main topic
-- Avoid tangential or loosely related sections that don't directly address the core topic
+- 将案例和实施细节整合进主题章节，勿单独设章
+- 确保各章节目标明确无内容重叠
+- 合并关联概念而非拆分
+- 关键要求：所有节(section)必须与章(chapter)直接相关
+- 避免包含与核心主题间接相关的边缘内容
+- 重点：若报告范围为全国则地区列举所有省份，若报告范围为某省份则地区列举所有地级市
 
-Before submitting, review your structure to ensure it has no redundant sections and follows a logical flow.
-</Task>
+提交前需审查框架，确保无冗余章节且逻辑连贯。
+</任务要求>
 
-<Feedback>
-Here is feedback on the report structure from review (if any):
+<修改意见>
+现有框架的审核反馈（如有）：
 {feedback}
-</Feedback>
+</修改意见>
 
-<Format>
-Call the Sections tool 
-</Format>
+<格式要求>
+调用Sections工具
+</格式要求>
 """
 
-query_writer_instructions="""You are an expert technical writer crafting targeted web search queries that will gather comprehensive information for writing a technical report section.
+query_writer_instructions="""您是一位专业的技术文档撰写专家，正在制定精准的网络搜索查询以收集技术报告章节所需的全面信息。
 
-<Report topic>
+<报告主题>
 {topic}
-</Report topic>
+</报告主题>
 
-<Section topic>
+<章名称>
+{chapter_name}
+</章名称>
+
+<节主题>
 {section_topic}
-</Section topic>
+</节主题>
 
-<Task>
-Your goal is to generate {number_of_queries} search queries that will help gather comprehensive information above the section topic. 
+<任务要求>
+您的目标是生成{number_of_queries}个搜索查询，这些查询将有助于全面收集上述章节主题的相关信息。
 
-The queries should:
+查询应满足以下要求：
 
-1. Be related to the topic 
-2. Examine different aspects of the topic
+1.必须与报告主题、章名称以及节主题相关
+2.需涵盖主题的不同方面
 
-Make the queries specific enough to find high-quality, relevant sources.
-</Task>
+确保查询足够具体，以获取高质量的相关资料来源。
+</任务要求>
 
-<Format>
-Call the Queries tool 
-</Format>
+<格式规范>
+调用Queries工具
+</格式规范>
 
-Today is {today}
+今天是{today}
 """
 
-section_writer_instructions = """Write one section of a research report.
+section_writer_instructions = """撰写研究报告的一个章节
 
-<Task>
-1. Review the report topic, section name, and section topic carefully.
-2. If present, review any existing section content. 
-3. Then, look at the provided Source material.
-4. Decide the sources that you will use it to write a report section.
-5. Write the report section and list your sources. 
-</Task>
+<任务要求>
+1. 仔细审阅报告主题、章节名称和章节主题
+2. 如存在现有章节内容，请进行审阅
+3. 查阅提供的原始资料
+4. 确定将用于撰写报告章节的资料来源
+5. 撰写报告章节并列出参考文献
+</任务要求>
 
-<Writing Guidelines>
-- If existing section content is not populated, write from scratch
-- If existing section content is populated, synthesize it with the source material
-- Strict 150-200 word limit
-- Use simple, clear language
-- Use short paragraphs (2-3 sentences max)
-- Use ## for section title (Markdown format)
-</Writing Guidelines>
+<写作指南>
+- 若现有章节内容为空，则从头开始撰写
+- 若现有章节内容已存在，需将其与原始资料进行整合
+- 严格控制在150-200字范围内
+- 使用简单清晰的语言
+- 采用短段落形式（每段最多2-3句话）
+- 使用##作为章节标题（Markdown格式）
+</写作指南>
 
-<Citation Rules>
-- Assign each unique URL a single citation number in your text
-- End with ### Sources that lists each source with corresponding numbers
-- IMPORTANT: Number sources sequentially without gaps (1,2,3,4...) in the final list regardless of which sources you choose
-- Example format:
-  [1] Source Title: URL
-  [2] Source Title: URL
-</Citation Rules>
+<引用规则>
+- 为每个独立URL分配一个引用编号
+- 以### 资料来源结尾，列出所有使用过的资料
+- 重要：最终列表中的编号必须连续无间隔（1,2,3,4...）
+- 示例格式：
+  [1] 资料标题：URL
+  [2] 资料标题：URL
+</引用规则>
 
-<Final Check>
-1. Verify that EVERY claim is grounded in the provided Source material
-2. Confirm each URL appears ONLY ONCE in the Source list
-3. Verify that sources are numbered sequentially (1,2,3...) without any gaps
-</Final Check>
+<最终核查>
+1. 确保每个论点都有原始资料支撑
+2. 确认每个URL在资料来源列表中只出现一次
+3. 核查编号是否连续无间隔（1,2,3...）
+</最终核查>
 """
 
 section_writer_inputs=""" 
-<Report topic>
+<报告主题>
 {topic}
-</Report topic>
+</报告主题>
 
-<Section name>
+<章名称>
+{chapter_name}
+</章名称>
+
+<节名称>
 {section_name}
-</Section name>
+</节名称>
 
-<Section topic>
+<节主题>
 {section_topic}
-</Section topic>
+</节主题>
 
-<Existing section content (if populated)>
+<现有节内容（如有）>
 {section_content}
-</Existing section content>
+</现有节内容>
 
-<Source material>
+<原始资料>
 {context}
-</Source material>
+</原始资料>
 """
 
-section_grader_instructions = """Review a report section relative to the specified topic:
+section_grader_instructions = """审阅报告章节与指定主题的关联性：
 
-<Report topic>
+<报告主题>
 {topic}
-</Report topic>
+</报告主题>
 
-<section topic>
+<章名称>
+{chapter_name}
+</章名称>
+
+<节主题>
 {section_topic}
-</section topic>
+</节主题>
 
-<section content>
+<节内容>
 {section}
-</section content>
+</节内容>
 
-<task>
-Evaluate whether the section content adequately addresses the section topic.
+<任务要求>
+评估章节内容是否充分涵盖章节主题。
 
-If the section content does not adequately address the section topic, generate {number_of_follow_up_queries} follow-up search queries to gather missing information.
-</task>
+若章节内容未能充分涵盖主题，则生成{number_of_follow_up_queries}条后续搜索查询以补充缺失信息。
+</任务要求>
 
-<format>
-Call the Feedback tool and output with the following schema:
+<输出格式>
+调用Feedback工具并按以下结构输出：
 
 grade: Literal["pass","fail"] = Field(
     description="Evaluation result indicating whether the response meets requirements ('pass') or needs revision ('fail')."
 )
 follow_up_queries: List[SearchQuery] = Field(
-    description="List of follow-up search queries.",
+    description="List of follow-up search queries."
 )
-</format>
+</输出格式>
+
+
+
+
+
+
+
+
+（翻译说明：
+1. 保留所有原始键名（grade/follow_up_queries等）和数据结构
+2. Literal["pass","fail"]等类型声明维持原貌
+3. Field描述信息进行本地化处理但保持技术含义
+4. 变量占位符{topic}/{section_topic}/{section}严格保留
+5. 技术术语对应：
+   - "review"译为"审阅"而非简单"检查"
+   - "follow-up"统一译为"后续"保持一致性
+6. 任务描述采用条件式分句，符合中文技术文档表达习惯）
 """
 
-final_section_writer_instructions="""You are an expert technical writer crafting a section that synthesizes information from the rest of the report.
+final_section_writer_instructions="""你是一位专业的技术文档撰写专家，负责整合报告中的信息并撰写特定章节。
 
-<Report topic>
+<报告主题>
 {topic}
-</Report topic>
+</报告主题>
 
-<Section name>
+<章名称>
+{chapter_name}
+</章名称>
+
+<节名称>
 {section_name}
-</Section name>
+</节名称>
 
-<Section topic> 
+<节主题>
 {section_topic}
-</Section topic>
+</节主题>
 
-<Available report content>
+<可用报告内容>
 {context}
-</Available report content>
+</可用报告内容>
 
-<Task>
-1. Section-Specific Approach:
+<任务要求>
+1. 撰写格式
+- 用章名称作为一级标题（Markdown格式），节名称作为二级标题（Markdown格式）
+- 确保正确的缩进和间距
 
-For Introduction:
-- Use # for report title (Markdown format)
-- 50-100 word limit
-- Write in simple and clear language
-- Focus on the core motivation for the report in 1-2 paragraphs
-- Preview the specific content covered in the main body sections (mention key examples, case studies, or findings)
-- Use a clear narrative arc to introduce the report
-- Include NO structural elements (no lists or tables)
-- No sources section needed
+2. 撰写原则：
+- 使用具体细节而非笼统陈述
+- 确保每个词都有价值
+- 聚焦于最重要的核心观点
+- 第五章的政策建议应对应与第四章的问题分析
+</任务要求>
 
-For Conclusion/Summary:
-- Use ## for section title (Markdown format)
-- 100-150 word limit
-- Synthesize and tie together the key themes, findings, and insights from the main body sections
-- Reference specific examples, case studies, or data points covered in the report
-- For comparative reports:
-    * Must include a focused comparison table using Markdown table syntax
-    * Table should distill insights from the report
-    * Keep table entries clear and concise
-- For non-comparative reports: 
-    * Only use ONE structural element IF it helps distill the points made in the report:
-    * Either a focused table comparing items present in the report (using Markdown table syntax)
-    * Or a short list using proper Markdown list syntax:
-      - Use `*` or `-` for unordered lists
-      - Use `1.` for ordered lists
-      - Ensure proper indentation and spacing
-- End with specific next steps or implications based on the report content
-- No sources section needed
-
-3. Writing Approach:
-- Use concrete details over general statements
-- Make every word count
-- Focus on your single most important point
-</Task>
-
-<Quality Checks>
-- For introduction: 50-100 word limit, # for report title, no structural elements, no sources section
-- For conclusion: 100-150 word limit, ## for section title, only ONE structural element at most, no sources section
-- Markdown format
-- Do not include word count or any preamble in your response
-</Quality Checks>"""
+<质量检查>
+- 使用Markdown格式
+- 不要在响应中包含字数统计或任何前言
+</质量检查>
+"""
 
 
 ## Supervisor
@@ -443,71 +471,73 @@ Today is {today}
 """
 
 
-SUMMARIZATION_PROMPT = """You are tasked with summarizing the raw content of a webpage retrieved from a web search. Your goal is to create a concise summary that preserves the most important information from the original web page. This summary will be used by a downstream research agent, so it's crucial to maintain the key details without losing essential information.
+SUMMARIZATION_PROMPT = """你需要对网页搜索获取的原始内容进行摘要总结。目标是创建一个简洁的摘要，保留原始网页中最重要的信息。该摘要将供下游研究智能体使用，因此必须在保留关键细节的同时不丢失核心信息。
 
-Here is the raw content of the webpage:
+以下是网页的原始内容：
 
-<webpage_content>
+<网页内容>
 {webpage_content}
-</webpage_content>
+</网页内容>
 
-Please follow these guidelines to create your summary:
+请遵循以下指南创建摘要：
 
-1. Identify and preserve the main topic or purpose of the webpage.
-2. Retain key facts, statistics, and data points that are central to the content's message.
-3. Keep important quotes from credible sources or experts.
-4. Maintain the chronological order of events if the content is time-sensitive or historical.
-5. Preserve any lists or step-by-step instructions if present.
-6. Include relevant dates, names, and locations that are crucial to understanding the content.
-7. Summarize lengthy explanations while keeping the core message intact.
+1. 识别并保留网页的主要主题或目的
+2. 保留内容核心的关键事实、统计数据和数据点
+3. 保留来自可信来源或专家的重点引用
+4. 如果是时效性或历史性内容，保持事件的时间顺序
+5. 保留任何列表或分步说明（如果存在）
+6. 包含对理解内容至关重要的相关日期、名称和地点
+7. 在保持核心信息完整的前提下，对冗长解释进行概括
 
-When handling different types of content:
+处理不同类型内容时的要点：
 
-- For news articles: Focus on the who, what, when, where, why, and how.
-- For scientific content: Preserve methodology, results, and conclusions.
-- For opinion pieces: Maintain the main arguments and supporting points.
-- For product pages: Keep key features, specifications, and unique selling points.
+- 新闻文章：聚焦人物、事件、时间、地点、原因和方式
+- 科学内容：保留研究方法、结果和结论
+- 观点文章：保持主要论点和支持论据
+- 产品页面：保留关键特性、规格和独特卖点
 
-Your summary should be significantly shorter than the original content but comprehensive enough to stand alone as a source of information. Aim for about 25-30% of the original length, unless the content is already concise.
+你的摘要应比原始内容简短得多，但要足够全面以作为独立信息来源。目标长度约为原文的25-30%（除非内容本身已经很简洁）。
 
-Present your summary in the following format:
+请按以下格式呈现你的摘要：
 
 ```
 {{
-   "summary": "Your concise summary here, structured with appropriate paragraphs or bullet points as needed",
+   "summary": "你的简洁摘要，根据需要分段或使用项目符号",
    "key_excerpts": [
-     "First important quote or excerpt",
-     "Second important quote or excerpt",
-     "Third important quote or excerpt",
-     ...Add more excerpts as needed, up to a maximum of 5
+     "第一条重要引用",
+     "第二条重要引用",
+     "第三条重要引用",
+     ...最多可添加5条引用
    ]
 }}
 ```
 
-Here are two examples of good summaries:
+以下是两个优秀摘要示例：
 
-Example 1 (for a news article):
+示例1（新闻文章）：
 ```json
 {{
-   "summary": "On July 15, 2023, NASA successfully launched the Artemis II mission from Kennedy Space Center. This marks the first crewed mission to the Moon since Apollo 17 in 1972. The four-person crew, led by Commander Jane Smith, will orbit the Moon for 10 days before returning to Earth. This mission is a crucial step in NASA's plans to establish a permanent human presence on the Moon by 2030.",
+   "summary": "2023年7月15日，NASA成功从肯尼迪航天中心发射了Artemis II任务。这是自1972年阿波罗17号以来首次载人登月任务。由指挥官Jane Smith带领的四人机组将绕月飞行10天后返回地球。该任务是NASA计划到2030年在月球建立永久性人类存在的关键一步。",
    "key_excerpts": [
-     "Artemis II represents a new era in space exploration," said NASA Administrator John Doe.
-     "The mission will test critical systems for future long-duration stays on the Moon," explained Lead Engineer Sarah Johnson.
-     "We're not just going back to the Moon, we're going forward to the Moon," Commander Jane Smith stated during the pre-launch press conference.
+     "NASA局长John Doe表示：'Artemis II代表了太空探索的新时代'",
+     "首席工程师Sarah Johnson解释：'该任务将测试未来长期月球停留的关键系统'",
+     "指挥官Jane Smith在发射前新闻发布会上表示：'我们不仅是重返月球，更是向月球前进'"
    ]
 }}
 ```
 
-Example 2 (for a scientific article):
+
+示例2（科学文章）：
 ```json
 {{
-   "summary": "A new study published in Nature Climate Change reveals that global sea levels are rising faster than previously thought. Researchers analyzed satellite data from 1993 to 2022 and found that the rate of sea-level rise has accelerated by 0.08 mm/year² over the past three decades. This acceleration is primarily attributed to melting ice sheets in Greenland and Antarctica. The study projects that if current trends continue, global sea levels could rise by up to 2 meters by 2100, posing significant risks to coastal communities worldwide.",
+   "summary": "《自然·气候变化》发表的新研究表明，全球海平面上升速度比之前认为的更快。研究人员分析了1993-2022年的卫星数据，发现过去三十年间海平面上升速度每年加速0.08毫米。这主要归因于格陵兰和南极冰盖融化。研究预测，如果当前趋势持续，到2100年全球海平面可能上升高达2米，给全球沿海社区带来重大风险。",
    "key_excerpts": [
-      "Our findings indicate a clear acceleration in sea-level rise, which has significant implications for coastal planning and adaptation strategies," lead author Dr. Emily Brown stated.
-      "The rate of ice sheet melt in Greenland and Antarctica has tripled since the 1990s," the study reports.
-      "Without immediate and substantial reductions in greenhouse gas emissions, we are looking at potentially catastrophic sea-level rise by the end of this century," warned co-author Professor Michael Green.
+      "首席作者Emily Brown博士表示：'我们的发现表明海平面上升明显加速，这对海岸规划和适应策略有重大影响'",
+      "研究报告指出：'自1990年代以来，格陵兰和南极冰盖融化速度已增加三倍'",
+      "合著者Michael Green教授警告：'如果不立即大幅减少温室气体排放，到本世纪末我们可能面临灾难性的海平面上升'"
    ]
 }}
 ```
 
-Remember, your goal is to create a summary that can be easily understood and utilized by a downstream research agent while preserving the most critical information from the original webpage."""
+请记住，你的目标是创建一个易于理解且能被下游研究智能体使用的摘要，同时保留原始网页中最关键的信息。
+"""

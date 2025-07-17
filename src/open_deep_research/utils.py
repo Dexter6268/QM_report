@@ -42,6 +42,26 @@ from open_deep_research.configuration import Configuration
 from open_deep_research.state import Section
 from open_deep_research.prompts import SUMMARIZATION_PROMPT
 
+import tiktoken
+
+def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
+    """Helper function to reduce the length of a string to fit within a token limit.
+
+    Args:
+        input_string (str): input string to be reduced.
+        max_tokens (int, optional): maximum token number. Defaults to 60000.
+
+    Returns:
+        str: reduced string that fits within the token limit.
+    """
+    encoder = tiktoken.get_encoding("cl100k_base")  # DeepSeek/OpenAI 使用类似的分词器
+    token_count = len(encoder.encode(input_string))
+    print(f"输入字符串的 Token 数: {token_count}")
+    if token_count > max_tokens:
+        len_str = int(max_tokens / token_count * len(input_string))
+        input_string = input_string[:len_str]
+        print(f"超过最大限制 {max_tokens}，已缩减字符串长度到 {len_str} 字符")
+    return input_string
 
 def get_config_value(value):
     """
@@ -207,7 +227,8 @@ async def tavily_search_async(search_queries, max_results: int = 5, topic: Liter
                     query,
                     max_results=max_results,
                     include_raw_content=include_raw_content,
-                    topic=topic
+                    topic=topic,
+                    timeout=300
                 )
             )
 
@@ -1365,6 +1386,7 @@ async def tavily_search(
     queries: List[str],
     max_results: Annotated[int, InjectedToolArg] = 5,
     topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
+    max_tokens: int = 30000,
     config: RunnableConfig = None
 ) -> str:
     """
@@ -1387,7 +1409,7 @@ async def tavily_search(
     )
 
     # Format the search results directly using the raw_content already provided
-    formatted_output = f"Search results: \n\n"
+    formatted_output = f"搜索结果: \n\n"
     
     # Deduplicate results by URL
     unique_results = {}
@@ -1401,13 +1423,14 @@ async def tavily_search(
         return None
 
     configurable = Configuration.from_runnable_config(config)
-    max_char_to_include = 30_000
+    max_char_to_include = 10_000
+
     # TODO: share this behavior across all search implementations / tools
     if configurable.process_search_results == "summarize":
         if configurable.summarization_model_provider == "anthropic":
             extra_kwargs = {"betas": ["extended-cache-ttl-2025-04-11"]}
         else:
-            extra_kwargs = {}
+            extra_kwargs = get_config_value(configurable.summarization_model_kwargs or {})
 
         summarization_model = init_chat_model(
             model=configurable.summarization_model,
@@ -1415,10 +1438,15 @@ async def tavily_search(
             max_retries=configurable.max_structured_output_retries,
             **extra_kwargs
         )
-        summarization_tasks = [
-            noop() if not result.get("raw_content") else summarize_webpage(summarization_model, result['raw_content'][:max_char_to_include])
-            for result in unique_results.values()
-        ]
+        summarization_tasks = []
+        for result in unique_results.values():
+            if not result.get("raw_content"):
+                summarization_tasks.append(noop())
+            else:
+                reduced_str = reduce_source_str(result['raw_content'], max_tokens = max_tokens)
+                summarization_tasks.append(summarize_webpage(summarization_model, reduced_str))
+            
+        
         summaries = await asyncio.gather(*summarization_tasks)
         unique_results = {
             url: {'title': result['title'], 'content': result['content'] if summary is None else summary}
@@ -1560,6 +1588,7 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
             {"role": "user", "content": user_input_content},
         ])
     except:
+        print("Failed to summarize webpage content, returning raw content instead.")
         # fall back on the raw content
         return webpage_content
 

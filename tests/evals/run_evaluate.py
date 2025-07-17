@@ -19,10 +19,10 @@ evaluators = [eval_overall_quality, eval_relevance, eval_structure]
 # TODO: Configure these variables
 process_search_results = "summarize"
 include_source = False
-summarization_model = "claude-3-5-haiku-latest"
-summarization_model_provider = "anthropic"
-supervisor_model = "claude-3-5-sonnet-latest"
-researcher_model = "claude-3-5-sonnet-latest"
+summarization_model = "DeepSeek-R1-671B"
+summarization_model_provider = "openai"
+supervisor_model = "DeepSeek-R1-671B"
+researcher_model = "DeepSeek-R1-671B"
 
 
 async def generate_report_multi_agent(

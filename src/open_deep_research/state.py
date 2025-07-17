@@ -6,6 +6,9 @@ class Section(BaseModel):
     name: str = Field(
         description="Name for this section of the report.",
     )
+    chapter_name: str = Field(
+        description="Name for the chapter which this section belong to.",
+    )  
     description: str = Field(
         description="Brief overview of the main topics and concepts to be covered in this section.",
     )
