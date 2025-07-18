@@ -26,6 +26,7 @@ from open_deep_research.prompts import (
     report_planner_instructions,
     query_writer_instructions, 
     section_writer_instructions,
+    final_planner_instructions,
     final_section_writer_instructions,
     section_grader_instructions,
     section_writer_inputs
@@ -34,6 +35,7 @@ from open_deep_research.prompts import (
 from open_deep_research.configuration import WorkflowConfiguration
 from open_deep_research.utils import (
     reduce_source_str,
+    get_model,
     format_sections, 
     get_config_value, 
     get_search_params, 
@@ -188,7 +190,8 @@ def human_feedback(state: ReportState, config: RunnableConfig) -> Command[Litera
     
     feedback = interrupt(interrupt_message)
     if isinstance(feedback, dict):
-        feedback = list(feedback.values())[0]  # Get the first value if feedback is a dict
+        feedback = list(feedback.values())[0]
+        logging.warning(f"feedback = {feedback}; type = {type(feedback)}")  # Get the first value if feedback is a dict
     # If the user approves the report plan, kick off section writing
     if isinstance(feedback, bool) and feedback is True:
         # Treat this as approve and kick off section writing
@@ -370,7 +373,51 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command[
             update={"search_queries": feedback.follow_up_queries, "section": section},
             goto="search_web"
         )
+
+# todo 更新逻辑，将生成的最后两章的section append到ReportState的sections中  
+async def generate_conclusion_plan(state: SectionState, config: RunnableConfig):
+    """为最终报告的结论部分（最后两章）生成大纲。
     
+    Args:
+        state: Current state with completed sections as context
+        config: Configuration for the writing model
+        
+    Returns:
+        Dict containing the newly written section
+    """
+
+    # Get configuration
+    configurable = WorkflowConfiguration.from_runnable_config(config)
+    report_structure = configurable.report_structure
+    # Get state 
+    topic = state["topic"]
+    section = state["section"]
+    completed_report_sections = state["report_sections_from_research"]
+    
+
+    # Format system instructions
+    system_instructions_sections = final_planner_instructions.format(
+        topic=topic, 
+        report_organization=report_structure, 
+        context=completed_report_sections
+    )
+
+    
+    planner_message = """生成报告的各章节内容。你的回复必须包含一个'sections'字段，其中列出所有章节。
+    每个章节必须包含以下字段：name（名称）、chapter_name（章名称）description（描述）、research（是否需要调研）和content（内容）。"""
+    # Generate the final plan
+
+    planner_llm = get_model(configurable, "planner")
+    structured_llm = planner_llm.with_structured_output(Sections)
+    report_sections = await structured_llm.ainvoke([SystemMessage(content=system_instructions_sections),
+                                             HumanMessage(content=planner_message)])
+
+    # Get sections
+    sections = report_sections.sections
+
+    # Write the updated section to completed sections
+    return {"completed_sections": [sections]}
+
 async def write_final_sections(state: SectionState, config: RunnableConfig):
     """Write sections that don't require research using completed sections as context.
     
@@ -433,7 +480,7 @@ def gather_completed_sections(state: ReportState):
     completed_sections = state["completed_sections"]
 
     # Format completed section to str to use as context for final sections
-    completed_report_sections = format_sections(completed_sections)
+    completed_report_sections = format_sections(completed_sections, final=True)
 
     return {"report_sections_from_research": completed_report_sections}
 
@@ -464,7 +511,13 @@ def compile_final_report(state: ReportState, config: RunnableConfig):
         section.content = completed_sections[section.name]
 
     # Compile final report
-    all_sections = format_sections(sections)
+    all_sections = format_sections(sections, final=True)
+
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")  # 格式：2025-07-18 14:30
+    filename = f"Report at {timestamp}.md"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(all_sections)
 
     if configurable.include_source_str:
         return {"final_report": all_sections, "source_str": state["source_str"]}

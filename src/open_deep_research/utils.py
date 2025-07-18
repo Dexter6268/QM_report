@@ -2,6 +2,7 @@ import os
 import asyncio
 import json
 import datetime
+from pyexpat import model
 import requests
 import random 
 import concurrent
@@ -46,7 +47,27 @@ from open_deep_research.prompts import SUMMARIZATION_PROMPT
 
 import tiktoken
 
-
+def get_model(configurable: Configuration, mode: str) -> BaseChatModel:
+    """Initialize and return the chat model based on the configuration."""
+    if mode == "planner":
+        model_name = configurable.planner_model
+        model_provider = configurable.planner_provider
+        model_kwargs = configurable.planner_model_kwargs or {}
+    elif mode == "writer":
+        model_name = configurable.writer_model
+        model_provider = configurable.writer_provider
+        model_kwargs = configurable.writer_model_kwargs or {}
+    elif mode == "summarizer":
+        model_name = configurable.summarization_model
+        model_provider = configurable.summarization_model_provider
+        model_kwargs = configurable.summarization_model_kwargs or {}
+    else:
+        raise ValueError(f"Invalid mode: {mode}. Expected 'planner' or 'writer'.")
+    model_provider = get_config_value(model_provider)
+    model_name = get_config_value(model_name)
+    model_kwargs = get_config_value(model_kwargs or {})
+    model = init_chat_model(model=model_name, model_provider=model_provider, **model_kwargs)
+    return model
 
 async def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
     """Helper function to reduce the length of a string to fit within a token limit.
@@ -176,7 +197,7 @@ def deduplicate_and_format_sources(
                 
     return formatted_text.strip()
 
-def format_sections(sections: list[Section]) -> str:
+def format_sections(sections: list[Section], final: bool=False) -> str:
     """ Format a list of sections into a string """
     chapter_no = set()
     i = 0
@@ -187,9 +208,15 @@ def format_sections(sections: list[Section]) -> str:
             chapter_no.add(section.chapter_name)
             i += 1
             k = j
-            sections_str += f"#第{i}章 {section.chapter_name}\n" + f"##第{j + 1 - k}节 {section.name}\n" + f"###概要: {section.description}\n" + f"###内容：{section.content if section.content else '[未完成]'}\n"
+            if not final:
+                sections_str += f"\n# 第{i}章 {section.chapter_name}\n" + f"## 第{j + 1 - k}节 {section.name}\n" + f"### 概要: {section.description}\n" + f"### 内容：{section.content if section.content else '[未完成]'}\n"
+            else:
+                sections_str += f"\n# 第{i}章 {section.chapter_name}\n" + f"## 第{j + 1 - k}节 {section.name}\n" + f"{section.content if section.content else '[未完成]'}\n"
         else:
-            sections_str += f"##第{j + 1 - k}节 {section.name}\n" + f"###概要: {section.description}\n" + f"###内容：{section.content if section.content else '[未完成]'}\n"
+            if not final:
+                sections_str += f"\n## 第{j + 1 - k}节 {section.name}\n" + f"### 概要: {section.description}\n" + f"### 内容：{section.content if section.content else '[未完成]'}\n"
+            else:
+                sections_str += f"\n## 第{j + 1 - k}节 {section.name}\n" + f"{section.content if section.content else '[未完成]'}\n"
     return sections_str
 
 
@@ -1644,7 +1671,7 @@ class Summary(BaseModel):
 async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
     """Summarize webpage content."""
     try:
-        user_input_content = "Please summarize the article"
+        user_input_content = "请总结以下网页内容：\n"
         if isinstance(model, ChatAnthropic):
             user_input_content = [{
                 "type": "text",
