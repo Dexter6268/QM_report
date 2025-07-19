@@ -375,7 +375,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command[
         )
 
 # todo 更新逻辑，将生成的最后两章的section append到ReportState的sections中  
-async def generate_conclusion_plan(state: SectionState, config: RunnableConfig):
+async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     """为最终报告的结论部分（最后两章）生成大纲。
     
     Args:
@@ -391,7 +391,7 @@ async def generate_conclusion_plan(state: SectionState, config: RunnableConfig):
     report_structure = configurable.report_structure
     # Get state 
     topic = state["topic"]
-    section = state["section"]
+    sections = state["sections"]
     completed_report_sections = state["report_sections_from_research"]
     
 
@@ -413,10 +413,10 @@ async def generate_conclusion_plan(state: SectionState, config: RunnableConfig):
                                              HumanMessage(content=planner_message)])
 
     # Get sections
-    sections = report_sections.sections
+    sections += report_sections.sections
 
     # Write the updated section to completed sections
-    return {"completed_sections": [sections]}
+    return {"sections": [sections]}
 
 async def write_final_sections(state: SectionState, config: RunnableConfig):
     """Write sections that don't require research using completed sections as context.
