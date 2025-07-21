@@ -389,6 +389,7 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     # Get configuration
     configurable = WorkflowConfiguration.from_runnable_config(config)
     report_structure = configurable.report_structure
+    conclusion_structure = configurable.conclusion_structure
     # Get state 
     topic = state["topic"]
     sections = state["sections"]
@@ -399,6 +400,7 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     system_instructions_sections = final_planner_instructions.format(
         topic=topic, 
         report_organization=report_structure, 
+        conclusion_structure=conclusion_structure,
         context=completed_report_sections
     )
 
@@ -565,6 +567,7 @@ builder.add_node("generate_report_plan", generate_report_plan)
 builder.add_node("human_feedback", human_feedback)
 builder.add_node("build_section_with_web_research", section_builder.compile())
 builder.add_node("gather_completed_sections", gather_completed_sections)
+builder.add_node("generate_conclusion_plan", generate_conclusion_plan)
 builder.add_node("write_final_sections", write_final_sections)
 builder.add_node("compile_final_report", compile_final_report)
 
@@ -572,7 +575,8 @@ builder.add_node("compile_final_report", compile_final_report)
 builder.add_edge(START, "generate_report_plan")
 builder.add_edge("generate_report_plan", "human_feedback")
 builder.add_edge("build_section_with_web_research", "gather_completed_sections")
-builder.add_conditional_edges("gather_completed_sections", initiate_final_section_writing, ["write_final_sections"])
+builder.add_edge("gather_completed_sections", "generate_conclusion_plan")
+builder.add_conditional_edges("generate_conclusion_plan", initiate_final_section_writing, ["write_final_sections"])
 builder.add_edge("write_final_sections", "compile_final_report")
 builder.add_edge("compile_final_report", END)
 
