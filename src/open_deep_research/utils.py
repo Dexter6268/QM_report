@@ -11,6 +11,7 @@ import aiohttp
 import httpx
 import time
 from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast
+from enum import Enum
 from urllib.parse import unquote
 from collections import defaultdict
 import itertools
@@ -48,25 +49,18 @@ import tiktoken
 
 def get_model(configurable: Configuration, mode: str) -> BaseChatModel:
     """Initialize and return the chat model based on the configuration."""
-    if mode == "planner":
-        model_name = configurable.planner_model
-        model_provider = configurable.planner_provider
-        model_kwargs = configurable.planner_model_kwargs or {}
-    elif mode == "writer":
-        model_name = configurable.writer_model
-        model_provider = configurable.writer_provider
-        model_kwargs = configurable.writer_model_kwargs or {}
-    elif mode == "summarizer":
-        model_name = configurable.summarization_model
-        model_provider = configurable.summarization_model_provider
-        model_kwargs = configurable.summarization_model_kwargs or {}
-    else:
-        raise ValueError(f"Invalid mode: {mode}. Expected 'planner' or 'writer'.")
-    model_provider = get_config_value(model_provider)
-    model_name = get_config_value(model_name)
-    model_kwargs = get_config_value(model_kwargs or {})
-    model = init_chat_model(model=model_name, model_provider=model_provider, **model_kwargs)
-    return model
+    mode_map = {
+        "planner": ("planner_model", "planner_provider", "planner_model_kwargs"),
+        "writer": ("writer_model", "writer_provider", "writer_model_kwargs"),
+        "summarizer": ("summarization_model", "summarization_model_provider", "summarization_model_kwargs"),
+    }
+    if mode not in mode_map:
+        raise ValueError(f"Invalid mode: {mode}. Expected one of {list(mode_map.keys())}.")
+    model_attr, provider_attr, kwargs_attr = mode_map[mode]
+    model_name = get_config_value(getattr(configurable, model_attr))
+    model_provider = get_config_value(getattr(configurable, provider_attr))
+    model_kwargs = get_config_value(getattr(configurable, kwargs_attr) or {})
+    return init_chat_model(model=model_name, model_provider=model_provider, **model_kwargs)
 
 async def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
     """Helper function to reduce the length of a string to fit within a token limit.
@@ -89,7 +83,7 @@ async def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
         logging.warning(f"超过最大限制 {max_tokens}，已缩减字符串长度到 {len_str} 字符")
     return input_string
 
-def get_config_value(value):
+def get_config_value(value: Union[str, Dict[str, Any], Enum]) -> Union[str, Dict[str, Any]]:
     """
     Helper function to handle string, dict, and enum cases of configuration values
     """
