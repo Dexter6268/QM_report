@@ -2,7 +2,6 @@ import os
 import asyncio
 import json
 import datetime
-from pyexpat import model
 import requests
 import random 
 import concurrent
