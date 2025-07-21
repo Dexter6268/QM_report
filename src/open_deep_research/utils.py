@@ -15,7 +15,6 @@ from urllib.parse import unquote
 from collections import defaultdict
 import itertools
 import logging
-import chardet
 
 from exa_py import Exa
 from linkup import LinkupClient
