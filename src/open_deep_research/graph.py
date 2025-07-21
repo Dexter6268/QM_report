@@ -122,8 +122,8 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     planner_model_kwargs = get_config_value(configurable.planner_model_kwargs or {})
 
     # Report planner instructions
-    planner_message = """生成报告的各章节内容。你的回复必须包含一个'sections'字段，其中列出所有章节。
-    每个章节必须包含以下字段：name（名称）、chapter_name（章名称）description（描述）、research（是否需要调研）和content（内容）。"""
+    planner_message = """Generate the sections of the report. Your response must include a 'sections' field containing a list of sections. 
+                        Each section must have: name, chapter_name, description, research, and content fields."""
 
     # Run the planner
     if planner_model == "claude-3-7-sonnet-latest":
@@ -374,7 +374,6 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command[
             goto="search_web"
         )
 
-# todo 更新逻辑，将生成的最后两章的section append到ReportState的sections中  
 async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     """为最终报告的结论部分（最后两章）生成大纲。
     
@@ -389,6 +388,7 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     # Get configuration
     configurable = WorkflowConfiguration.from_runnable_config(config)
     report_structure = configurable.report_structure
+    conclusion_structure = configurable.conclusion_structure
     # Get state 
     topic = state["topic"]
     sections = state["sections"]
@@ -399,6 +399,7 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     system_instructions_sections = final_planner_instructions.format(
         topic=topic, 
         report_organization=report_structure, 
+        conclusion_structure=conclusion_structure,
         context=completed_report_sections
     )
 
@@ -416,7 +417,7 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     sections += report_sections.sections
 
     # Write the updated section to completed sections
-    return {"sections": [sections]}
+    return {"sections": sections}
 
 async def write_final_sections(state: SectionState, config: RunnableConfig):
     """Write sections that don't require research using completed sections as context.
@@ -514,8 +515,8 @@ def compile_final_report(state: ReportState, config: RunnableConfig):
     all_sections = format_sections(sections, final=True)
 
     from datetime import datetime
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")  # 格式：2025-07-18 14:30
-    filename = f"Report at {timestamp}.md"
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M")  # 格式：2025-07-18 14:30
+    filename = f"examples/Report at {timestamp}.md"
     with open(filename, "w", encoding="utf-8") as f:
         f.write(all_sections)
 
@@ -565,6 +566,7 @@ builder.add_node("generate_report_plan", generate_report_plan)
 builder.add_node("human_feedback", human_feedback)
 builder.add_node("build_section_with_web_research", section_builder.compile())
 builder.add_node("gather_completed_sections", gather_completed_sections)
+builder.add_node("generate_conclusion_plan", generate_conclusion_plan)
 builder.add_node("write_final_sections", write_final_sections)
 builder.add_node("compile_final_report", compile_final_report)
 
@@ -572,7 +574,8 @@ builder.add_node("compile_final_report", compile_final_report)
 builder.add_edge(START, "generate_report_plan")
 builder.add_edge("generate_report_plan", "human_feedback")
 builder.add_edge("build_section_with_web_research", "gather_completed_sections")
-builder.add_conditional_edges("gather_completed_sections", initiate_final_section_writing, ["write_final_sections"])
+builder.add_edge("gather_completed_sections", "generate_conclusion_plan")
+builder.add_conditional_edges("generate_conclusion_plan", initiate_final_section_writing, ["write_final_sections"])
 builder.add_edge("write_final_sections", "compile_final_report")
 builder.add_edge("compile_final_report", END)
 

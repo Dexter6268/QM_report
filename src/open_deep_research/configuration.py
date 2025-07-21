@@ -5,17 +5,23 @@ from typing import Any, Optional, Dict, Literal
 
 from langchain_core.runnables import RunnableConfig
 
-DEFAULT_REPORT_STRUCTURE = """Use this structure to create a report on the user-provided topic:
 
-1. Introduction (no research needed)
-   - Brief overview of the topic area
+DEFAULT_REPORT_STRUCTURE = """请使用以下结构撰写用户提供主题的报告：
 
-2. Main Body Sections:
-   - Each section should focus on a sub-topic of the user-provided topic
-   
-3. Conclusion
-   - Aim for 1 structural element (either a list or table) that distills the main body sections 
-   - Provide a concise summary of the report"""
+1. 引言（无需检索）
+    - 简要介绍主题领域
+
+2. 主体部分：
+    - 每个小节应聚焦于主题的一个子话题
+
+"""
+
+DEFAULT_CONCLUSION_STRUCTURE = """请使用以下结构撰写用户提供主题的报告:
+1. 问题分析
+    - 内容应针对于现有的报告内容
+2. 政策建议
+    - 内容应对应于问题分析
+"""
 
 class SearchAPI(Enum):
     PERPLEXITY = "perplexity"
@@ -33,6 +39,7 @@ class WorkflowConfiguration:
     """Configuration for the workflow/graph-based implementation (graph.py)."""
     # Common configuration
     report_structure: str = DEFAULT_REPORT_STRUCTURE
+    conclusion_structure: str = DEFAULT_CONCLUSION_STRUCTURE
     search_api: SearchAPI = SearchAPI.TAVILY
     search_api_config: Optional[Dict[str, Any]] = None
     process_search_results: Literal["summarize", "split_and_rerank"] | None = None
