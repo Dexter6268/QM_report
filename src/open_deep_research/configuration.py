@@ -5,7 +5,6 @@ from typing import Any, Optional, Dict, Literal
 
 from langchain_core.runnables import RunnableConfig
 
-from open_deep_research.multi_agent import Conclusion
 
 DEFAULT_REPORT_STRUCTURE = """请使用以下结构撰写用户提供主题的报告：
 
