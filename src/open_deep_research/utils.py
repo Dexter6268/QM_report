@@ -270,44 +270,6 @@ async def tavily_search_async(
                 timeout=300
             )
             logging.debug(f"Completed Tavily search for query: {query}")
-
-            # # Efficiently re-fetch all URLs and replace raw_content
-            # async def fetch_raw_content(url):
-            #     try:
-            #         async with aiohttp.ClientSession() as session:
-            #             async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            #                 if resp.status == 200:
-            #                     content_type = resp.headers.get('Content-Type', '').lower()
-            #                     raw_bytes = await resp.read()
-            #                     # Use chardet to detect encoding, fallback to utf-8
-            #                     detected = chardet.detect(raw_bytes)
-            #                     encoding = detected.get('encoding', 'utf-8')
-            #                     try:
-            #                         text = raw_bytes.decode(encoding, errors='replace')
-            #                     except Exception as e:
-            #                         text = raw_bytes.decode('utf-8', errors='replace')
-            #                     if 'text/html' in content_type:
-            #                         logging.info(f"Fetching raw content from {url} with encoding {encoding}")
-            #                         return text
-            #                     else:
-            #                         return f"[Non-HTML content: {content_type}]"
-            #                 else:
-            #                     return f"[Error: status {resp.status}]"
-            #     except Exception as e:
-            #         return f"[Error fetching content: {str(e)}]"
-
-            # # Prepare tasks for all URLs
-            # fetch_tasks = []
-            # for res in result.get('results', []):
-            #     fetch_tasks.append(fetch_raw_content(res.get('url', '')))
-
-            # # Run all fetches concurrently
-            # new_contents = await asyncio.gather(*fetch_tasks)
-
-            # # Replace raw_content for each result
-            # for res, new_content in zip(result.get('results', []), new_contents):
-            #     res['raw_content'] = new_content
-
             return result
         except Exception as e:
             logging.error(f"Tavily search failed for query '{query}': {str(e)}", exc_info=True)
