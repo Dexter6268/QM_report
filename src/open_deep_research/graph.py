@@ -98,11 +98,14 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     )
 
     # Generate queries
-    results = await structured_llm.ainvoke(
-        [
-            SystemMessage(content=system_instructions_query),
-            HumanMessage(content="生成能够辅助制定报告章节结构的搜索关键词。"),
-        ]
+    results = cast(
+        Queries,
+        await structured_llm.ainvoke(
+            [
+                SystemMessage(content=system_instructions_query),
+                HumanMessage(content="生成能够辅助制定报告章节结构的搜索关键词。"),
+            ]
+        ),
     )
 
     # Web search
@@ -254,11 +257,14 @@ async def generate_queries(state: SectionState, config: RunnableConfig):
     )
 
     # Generate queries
-    queries = await structured_llm.ainvoke(
-        [
-            SystemMessage(content=system_instructions),
-            HumanMessage(content="针对给定的系统提示生成浏览器搜索的关键词或语句"),
-        ]
+    queries = cast(
+        Queries,
+        await structured_llm.ainvoke(
+            [
+                SystemMessage(content=system_instructions),
+                HumanMessage(content="针对给定的系统提示生成浏览器搜索的关键词或语句"),
+            ]
+        ),
     )
 
     return {"search_queries": queries.queries}
@@ -350,7 +356,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command:
     )
 
     # Write content to the section object
-    section.content = section_content.content
+    section.content = cast(str, section_content.content)
 
     # Grade prompt
     section_grader_message = "评估报告质量并提出补充信息所需的后续问题。若评估结果为'通过'(pass)，则所有后续查询返回空字符串。若评估结果为'不通过'(fail)，需提供具体的搜索查询以获取缺失信息。"
@@ -365,22 +371,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command:
     )
 
     # Use planner model for reflection
-    planner_provider = get_config_value(configurable.planner_provider)
-    planner_model = get_config_value(configurable.planner_model)
-    planner_model_kwargs = get_config_value(configurable.planner_model_kwargs or {})
-
-    if planner_model == "claude-3-7-sonnet-latest":
-        # Allocate a thinking budget for claude-3-7-sonnet-latest as the planner model
-        reflection_model = init_chat_model(
-            model=planner_model,
-            model_provider=planner_provider,
-            max_tokens=20_000,
-            thinking={"type": "enabled", "budget_tokens": 16_000},
-        ).with_structured_output(Feedback)
-    else:
-        reflection_model = init_chat_model(
-            model=planner_model, model_provider=planner_provider, **planner_model_kwargs
-        ).with_structured_output(Feedback)
+    reflection_model = get_model(configurable, "planner").with_structured_output(Feedback)
     # Generate feedback
     feedback = cast(
         Feedback,
@@ -443,16 +434,6 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     planner_message = """Generate the sections of the report. Your response must include a 'sections' field containing a list of sections.
     Each section must have: name, chapter_name, description, research, and content fields."""
     # Generate the final plan
-
-    planner_llm = get_model(configurable, "planner")
-    structured_llm = planner_llm.with_structured_output(Sections)
-    report_sections = await structured_llm.ainvoke(
-        [
-            SystemMessage(content=system_instructions_sections),
-            HumanMessage(content=planner_message),
-        ]
-    )
-
     report_sections = cast(
         Sections,
         await structured_llm.ainvoke(
@@ -511,7 +492,7 @@ async def write_final_sections(state: SectionState, config: RunnableConfig):
     )
 
     # Write content to section
-    section.content = section_content.content
+    section.content = cast(str, section_content.content)
 
     # Write the updated section to completed sections
     return {"completed_sections": [section]}
