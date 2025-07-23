@@ -61,9 +61,9 @@ def get_model(configurable: Configuration, mode: str) -> BaseChatModel:
     if mode not in mode_map:
         raise ValueError(f"Invalid mode: {mode}. Expected one of {list(mode_map.keys())}.")
     model_attr, provider_attr, kwargs_attr = mode_map[mode]
-    model_name = get_config_value(getattr(configurable, model_attr))
-    model_provider = get_config_value(getattr(configurable, provider_attr))
-    model_kwargs = get_config_value(getattr(configurable, kwargs_attr) or {})
+    model_name = str(get_config_value(getattr(configurable, model_attr)))
+    model_provider = str(get_config_value(getattr(configurable, provider_attr)))
+    model_kwargs = cast(Dict[str, Any], get_config_value(getattr(configurable, kwargs_attr) or {}))
     return init_chat_model(model=model_name, model_provider=model_provider, **model_kwargs)
 
 
@@ -1545,7 +1545,7 @@ async def tavily_search(
     max_results: Annotated[int, InjectedToolArg] = 5,
     topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
     max_tokens: int = 5000,
-    config: RunnableConfig = None,
+    config: Union[RunnableConfig, None] = None,
 ) -> str:
     """
     Fetches results from Tavily search API.
