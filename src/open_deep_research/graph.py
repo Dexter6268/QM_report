@@ -551,8 +551,8 @@ def compile_final_report(state: ReportState, config: RunnableConfig):
 
     from datetime import datetime
 
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M")  # 格式：2025-07-18 14:30
-    filename = f"examples/Report at {timestamp}.md"
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H_%M")  # 格式：2025-07-18 14:30
+    filename = f"examples/Report_at_{timestamp}.md"
     with open(filename, "w", encoding="utf-8") as f:
         f.write(all_sections)
 

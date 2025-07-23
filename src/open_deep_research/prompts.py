@@ -68,7 +68,7 @@ report_planner_instructions = """
 每个节需包含以下字段：
 
 - name - 该节标题
-- chapter_name - 该节所属章标题
+- chapter_name - 该节所属章标题（不需要包括第几章，直接写标题本身）
 - description - 本节主要内容的简要说明
 - research - 是否需进行联网搜索（关键要求：必须设置Research=True）
 - content - 章节具体内容（暂留空）
