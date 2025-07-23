@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import json
 import datetime
@@ -12,7 +13,7 @@ import time
 from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast
 from enum import Enum
 from urllib.parse import unquote
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import itertools
 import logging
 
@@ -242,6 +243,130 @@ def format_sections(sections: list[Section], final: bool = False) -> str:
                     + f"{section.content if section.content else '[未完成]'}\n"
                 )
     return sections_str
+
+
+def process_references_from_sections(sections: List[Section]) -> tuple[str, List[Section]]:
+    """
+    处理多个Section对象中的引用资料，提取所有引用，按照正文中的引用顺序重新排序。
+
+    Args:
+        sections: Section对象列表，每个对象的content属性包含正文和引用资料
+
+    Returns:
+        tuple: (统一的资料来源字符串, 处理后的Section对象列表)
+    """
+    # 用于存储所有引用及其在文档中的位置
+    all_citations = []
+    # 用于存储每个节的引用资料
+    section_references = {}
+    # 记录当前处理的文本位置
+    current_position = 0
+
+    # 第一遍处理：提取每个节的引用资料和正文中的引用
+    for section_idx, section in enumerate(sections):
+        content = section.content
+
+        # 查找该节中的资料来源部分
+        source_match = re.search(
+            r"### 资料来源\n((?:[^\n#]|(?:\n(?!#{1,3})))+)", content, re.DOTALL
+        )
+        if source_match:
+            source_content = source_match.group(1)
+
+            # 提取该节中的所有引用条目
+            references = re.findall(r"\[(.*?)\](.*?)(?=\n\[|\n*$)", source_content, re.DOTALL)
+
+            # 保存该节的引用信息
+            section_refs = {}
+            for ref_id, ref_content in references:
+                section_refs[ref_id] = ref_content.strip()
+
+            section_references[section_idx] = section_refs
+
+            # 计算正文部分（去掉资料来源部分）
+            section_content_without_source = content[: source_match.start()]
+
+            # 查找正文中的所有引用标记及其位置
+            for citation_match in re.finditer(r"\[(\d+)\]", section_content_without_source):
+                citation_id = citation_match.group(1)
+                if citation_id in section_refs:
+                    all_citations.append(
+                        {
+                            "global_position": current_position + citation_match.start(),
+                            "old_id": citation_id,
+                            "section_idx": section_idx,
+                            "content": section_refs[citation_id],
+                        }
+                    )
+
+            # 更新Section对象，移除资料来源部分
+            sections[section_idx].content = section_content_without_source
+
+        # 更新当前位置
+        current_position += len(content)
+
+    # 按照在全局正文中的位置排序引用
+    all_citations.sort(key=lambda x: x["global_position"])
+
+    # 按正文中引用的顺序创建有序字典，合并相同内容
+    ordered_refs = OrderedDict()
+    old_to_new_id = {}  # {(section_idx, old_id): new_id}
+    new_id = 1
+
+    for citation in all_citations:
+        section_idx = citation["section_idx"]
+        old_id = citation["old_id"]
+        content = citation["content"]
+
+        # 检查是否已经有相同内容的引用
+        content_already_referenced = False
+        for existing_new_id, existing_content in ordered_refs.items():
+            if existing_content == content:
+                old_to_new_id[(section_idx, old_id)] = existing_new_id
+                content_already_referenced = True
+                break
+
+        # 如果内容是新的，分配新的引用ID
+        if not content_already_referenced:
+            new_id_str = str(new_id)
+            old_to_new_id[(section_idx, old_id)] = new_id_str
+            ordered_refs[new_id_str] = content
+            new_id += 1
+
+    # 第二遍处理：替换每个节中的引用编号
+    for section_idx, section in enumerate(sections):
+        content = section.content
+
+        # 替换该节正文中的引用
+        updated_content = content
+
+        # 查找该节中的所有引用
+        if section_idx in section_references:
+            section_citations = []
+            for citation_match in re.finditer(r"\[(\d+)\]", content):
+                old_id = citation_match.group(1)
+                if old_id in section_references[section_idx]:
+                    start_pos = citation_match.start()
+                    end_pos = citation_match.end()
+                    section_citations.append((start_pos, end_pos, old_id))
+
+            # 从后向前替换，避免位置偏移问题
+            for start_pos, end_pos, old_id in sorted(section_citations, reverse=True):
+                if (section_idx, old_id) in old_to_new_id:
+                    new_id = old_to_new_id[(section_idx, old_id)]
+                    updated_content = (
+                        updated_content[:start_pos] + f"[{new_id}]" + updated_content[end_pos:]
+                    )
+
+        # 更新Section对象
+        sections[section_idx].content = updated_content
+
+    # 生成统一的资料来源部分
+    references_section = "\n# 资料来源\n"
+    for ref_id, ref_content in ordered_refs.items():
+        references_section += f"[{ref_id}] {ref_content}\n\n"
+
+    return references_section, sections
 
 
 @traceable

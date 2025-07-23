@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Any, Literal, cast, Dict
 
 from langchain.chat_models import init_chat_model
@@ -29,6 +30,7 @@ from open_deep_research.prompts import (
     final_section_writer_instructions,
     section_grader_instructions,
     section_writer_inputs,
+    compile_final_report_instructions,
 )
 
 from open_deep_research.configuration import WorkflowConfiguration
@@ -40,6 +42,7 @@ from open_deep_research.utils import (
     get_search_params,
     select_and_execute_search,
     get_today_str,
+    process_references_from_sections,
 )
 
 ## Nodes --
@@ -547,19 +550,34 @@ def compile_final_report(state: ReportState, config: RunnableConfig):
         section.content = completed_sections[section.name]
 
     # Compile final report
+    references_section, sections = process_references_from_sections(sections)
     all_sections = format_sections(sections, final=True)
+    final_report = all_sections + references_section
 
-    from datetime import datetime
+    # # Format system instructions
+    # system_instructions = compile_final_report_instructions.format(report_content=all_sections)
+
+    # # Generate section
+    # writer_model = get_model(configurable, "writer")
+    # final_report = cast(
+    #     str,
+    #     writer_model.invoke(
+    #         [
+    #             SystemMessage(content=system_instructions),
+    #             HumanMessage(content="根据给定的系统提示撰写报告节内容"),
+    #         ]
+    #     ).content,
+    # )
 
     timestamp = datetime.now().strftime("%Y-%m-%d-%H_%M")  # 格式：2025-07-18 14:30
     filename = f"examples/Report_at_{timestamp}.md"
     with open(filename, "w", encoding="utf-8") as f:
-        f.write(all_sections)
+        f.write(final_report)
 
     if configurable.include_source_str:
-        return {"final_report": all_sections, "source_str": state["source_str"]}
+        return {"final_report": final_report, "source_str": state["source_str"]}
     else:
-        return {"final_report": all_sections}
+        return {"final_report": final_report}
 
 
 def initiate_final_section_writing(state: ReportState):
