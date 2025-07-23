@@ -86,12 +86,7 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
         report_structure = str(report_structure)
 
     # Set writer model (model used for query writing)
-    writer_provider = get_config_value(configurable.writer_provider)
-    writer_model_name = get_config_value(configurable.writer_model)
-    writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
-    writer_model = init_chat_model(
-        model=writer_model_name, model_provider=writer_provider, **writer_model_kwargs
-    )
+    writer_model = get_model(configurable, "writer")
     structured_llm = writer_model.with_structured_output(Queries)
 
     # Format system instructions
@@ -103,11 +98,14 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     )
 
     # Generate queries
-    results = await structured_llm.ainvoke(
-        [
-            SystemMessage(content=system_instructions_query),
-            HumanMessage(content="生成能够辅助制定报告章节结构的搜索关键词。"),
-        ]
+    results = cast(
+        Queries,
+        await structured_llm.ainvoke(
+            [
+                SystemMessage(content=system_instructions_query),
+                HumanMessage(content="生成能够辅助制定报告章节结构的搜索关键词。"),
+            ]
+        ),
     )
 
     # Web search
@@ -116,41 +114,19 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     # Search the web with parameters
     source_str = await select_and_execute_search(search_api, query_list, params_to_pass)
     source_str = await reduce_source_str(source_str, max_tokens=10000)
+
+    # Set the planner
+    planner_llm = get_model(configurable, "planner")
+    structured_llm = planner_llm.with_structured_output(Sections)
     # Format system instructions
     system_instructions_sections = report_planner_instructions.format(
         topic=topic, report_organization=report_structure, context=source_str, feedback=feedback
     )
-
-    # Set the planner
-    planner_provider = get_config_value(configurable.planner_provider)
-    planner_model = get_config_value(configurable.planner_model)
-    planner_model_kwargs = get_config_value(configurable.planner_model_kwargs or {})
-
     # Report planner instructions
     planner_message = """Generate the sections of the report. Your response must include a 'sections' field containing a list of sections. 
                         Each section must have: name, chapter_name, description, research, and content fields."""
 
-    # Run the planner
-    if planner_model == "claude-3-7-sonnet-latest":
-        # Allocate a thinking budget for claude-3-7-sonnet-latest as the planner model
-        planner_llm = init_chat_model(
-            model=planner_model,
-            model_provider=planner_provider,
-            max_tokens=20000,
-            thinking={"type": "enabled", "budget_tokens": 16_000},
-        )
-
-    else:
-        # With other models, thinking tokens are not specifically allocated
-        planner_llm = init_chat_model(
-            model=planner_model, model_provider=planner_provider, **planner_model_kwargs
-        )
-
     # Generate the report sections
-    # Pylance may not recognize that .with_structured_output(Sections) ensures the return type,
-    # so we explicitly cast the result to help static analysis tools.
-
-    structured_llm = planner_llm.with_structured_output(Sections)
     report_sections = cast(
         Sections,
         await structured_llm.ainvoke(
@@ -267,12 +243,7 @@ async def generate_queries(state: SectionState, config: RunnableConfig):
     number_of_queries = configurable.number_of_queries
 
     # Generate queries
-    writer_provider = get_config_value(configurable.writer_provider)
-    writer_model_name = get_config_value(configurable.writer_model)
-    writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
-    writer_model = init_chat_model(
-        model=writer_model_name, model_provider=writer_provider, **writer_model_kwargs
-    )
+    writer_model = get_model(configurable, "writer")
     structured_llm = writer_model.with_structured_output(Queries)
 
     # Format system instructions
@@ -286,11 +257,14 @@ async def generate_queries(state: SectionState, config: RunnableConfig):
     )
 
     # Generate queries
-    queries = await structured_llm.ainvoke(
-        [
-            SystemMessage(content=system_instructions),
-            HumanMessage(content="针对给定的系统提示生成浏览器搜索的关键词或语句"),
-        ]
+    queries = cast(
+        Queries,
+        await structured_llm.ainvoke(
+            [
+                SystemMessage(content=system_instructions),
+                HumanMessage(content="针对给定的系统提示生成浏览器搜索的关键词或语句"),
+            ]
+        ),
     )
 
     return {"search_queries": queries.queries}
@@ -373,13 +347,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command:
     )
 
     # Generate section
-    writer_provider = get_config_value(configurable.writer_provider)
-    writer_model_name = get_config_value(configurable.writer_model)
-    writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
-    writer_model = init_chat_model(
-        model=writer_model_name, model_provider=writer_provider, **writer_model_kwargs
-    )
-
+    writer_model = get_model(configurable, "writer")
     section_content = await writer_model.ainvoke(
         [
             SystemMessage(content=section_writer_instructions),
@@ -388,7 +356,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command:
     )
 
     # Write content to the section object
-    section.content = section_content.content
+    section.content = cast(str, section_content.content)
 
     # Grade prompt
     section_grader_message = "评估报告质量并提出补充信息所需的后续问题。若评估结果为'通过'(pass)，则所有后续查询返回空字符串。若评估结果为'不通过'(fail)，需提供具体的搜索查询以获取缺失信息。"
@@ -403,22 +371,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command:
     )
 
     # Use planner model for reflection
-    planner_provider = get_config_value(configurable.planner_provider)
-    planner_model = get_config_value(configurable.planner_model)
-    planner_model_kwargs = get_config_value(configurable.planner_model_kwargs or {})
-
-    if planner_model == "claude-3-7-sonnet-latest":
-        # Allocate a thinking budget for claude-3-7-sonnet-latest as the planner model
-        reflection_model = init_chat_model(
-            model=planner_model,
-            model_provider=planner_provider,
-            max_tokens=20_000,
-            thinking={"type": "enabled", "budget_tokens": 16_000},
-        ).with_structured_output(Feedback)
-    else:
-        reflection_model = init_chat_model(
-            model=planner_model, model_provider=planner_provider, **planner_model_kwargs
-        ).with_structured_output(Feedback)
+    reflection_model = get_model(configurable, "planner").with_structured_output(Feedback)
     # Generate feedback
     feedback = cast(
         Feedback,
@@ -466,6 +419,10 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     sections = state["sections"]
     completed_report_sections = state["report_sections_from_research"]
 
+    # set planner model
+    planner_llm = get_model(configurable, "planner")
+    structured_llm = planner_llm.with_structured_output(Sections)
+
     # Format system instructions
     system_instructions_sections = final_planner_instructions.format(
         topic=topic,
@@ -477,9 +434,6 @@ async def generate_conclusion_plan(state: ReportState, config: RunnableConfig):
     planner_message = """Generate the sections of the report. Your response must include a 'sections' field containing a list of sections.
     Each section must have: name, chapter_name, description, research, and content fields."""
     # Generate the final plan
-
-    planner_llm = get_model(configurable, "planner")
-    structured_llm = planner_llm.with_structured_output(Sections)
     report_sections = cast(
         Sections,
         await structured_llm.ainvoke(
@@ -529,13 +483,7 @@ async def write_final_sections(state: SectionState, config: RunnableConfig):
     )
 
     # Generate section
-    writer_provider = get_config_value(configurable.writer_provider)
-    writer_model_name = get_config_value(configurable.writer_model)
-    writer_model_kwargs = get_config_value(configurable.writer_model_kwargs or {})
-    writer_model = init_chat_model(
-        model=writer_model_name, model_provider=writer_provider, **writer_model_kwargs
-    )
-
+    writer_model = get_model(configurable, "writer")
     section_content = await writer_model.ainvoke(
         [
             SystemMessage(content=system_instructions),
@@ -544,7 +492,7 @@ async def write_final_sections(state: SectionState, config: RunnableConfig):
     )
 
     # Write content to section
-    section.content = section_content.content
+    section.content = cast(str, section_content.content)
 
     # Write the updated section to completed sections
     return {"completed_sections": [section]}
@@ -603,8 +551,8 @@ def compile_final_report(state: ReportState, config: RunnableConfig):
 
     from datetime import datetime
 
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M")  # 格式：2025-07-18 14:30
-    filename = f"examples/Report at {timestamp}.md"
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H_%M")  # 格式：2025-07-18 14:30
+    filename = f"examples/Report_at_{timestamp}.md"
     with open(filename, "w", encoding="utf-8") as f:
         f.write(all_sections)
 

@@ -10,6 +10,7 @@ import aiohttp
 import httpx
 import time
 from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast
+from enum import Enum
 from urllib.parse import unquote
 from collections import defaultdict
 import itertools
@@ -48,25 +49,22 @@ import tiktoken
 
 def get_model(configurable: Configuration, mode: str) -> BaseChatModel:
     """Initialize and return the chat model based on the configuration."""
-    if mode == "planner":
-        model_name = configurable.planner_model
-        model_provider = configurable.planner_provider
-        model_kwargs = configurable.planner_model_kwargs or {}
-    elif mode == "writer":
-        model_name = configurable.writer_model
-        model_provider = configurable.writer_provider
-        model_kwargs = configurable.writer_model_kwargs or {}
-    elif mode == "summarizer":
-        model_name = configurable.summarization_model
-        model_provider = configurable.summarization_model_provider
-        model_kwargs = configurable.summarization_model_kwargs or {}
-    else:
-        raise ValueError(f"Invalid mode: {mode}. Expected 'planner' or 'writer'.")
-    model_provider = get_config_value(model_provider)
-    model_name = get_config_value(model_name)
-    model_kwargs = get_config_value(model_kwargs or {})
-    model = init_chat_model(model=model_name, model_provider=model_provider, **model_kwargs)
-    return model
+    mode_map = {
+        "planner": ("planner_model", "planner_provider", "planner_model_kwargs"),
+        "writer": ("writer_model", "writer_provider", "writer_model_kwargs"),
+        "summarizer": (
+            "summarization_model",
+            "summarization_model_provider",
+            "summarization_model_kwargs",
+        ),
+    }
+    if mode not in mode_map:
+        raise ValueError(f"Invalid mode: {mode}. Expected one of {list(mode_map.keys())}.")
+    model_attr, provider_attr, kwargs_attr = mode_map[mode]
+    model_name = str(get_config_value(getattr(configurable, model_attr)))
+    model_provider = str(get_config_value(getattr(configurable, provider_attr)))
+    model_kwargs = cast(Dict[str, Any], get_config_value(getattr(configurable, kwargs_attr) or {}))
+    return init_chat_model(model=model_name, model_provider=model_provider, **model_kwargs)
 
 
 async def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
@@ -93,7 +91,7 @@ async def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
     return input_string
 
 
-def get_config_value(value):
+def get_config_value(value: Union[str, Dict[str, Any], Enum]) -> Union[str, Dict[str, Any]]:
     """
     Helper function to handle string, dict, and enum cases of configuration values
     """
@@ -296,44 +294,6 @@ async def tavily_search_async(
                 timeout=300,
             )
             logging.debug(f"Completed Tavily search for query: {query}")
-
-            # # Efficiently re-fetch all URLs and replace raw_content
-            # async def fetch_raw_content(url):
-            #     try:
-            #         async with aiohttp.ClientSession() as session:
-            #             async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            #                 if resp.status == 200:
-            #                     content_type = resp.headers.get('Content-Type', '').lower()
-            #                     raw_bytes = await resp.read()
-            #                     # Use chardet to detect encoding, fallback to utf-8
-            #                     detected = chardet.detect(raw_bytes)
-            #                     encoding = detected.get('encoding', 'utf-8')
-            #                     try:
-            #                         text = raw_bytes.decode(encoding, errors='replace')
-            #                     except Exception as e:
-            #                         text = raw_bytes.decode('utf-8', errors='replace')
-            #                     if 'text/html' in content_type:
-            #                         logging.info(f"Fetching raw content from {url} with encoding {encoding}")
-            #                         return text
-            #                     else:
-            #                         return f"[Non-HTML content: {content_type}]"
-            #                 else:
-            #                     return f"[Error: status {resp.status}]"
-            #     except Exception as e:
-            #         return f"[Error fetching content: {str(e)}]"
-
-            # # Prepare tasks for all URLs
-            # fetch_tasks = []
-            # for res in result.get('results', []):
-            #     fetch_tasks.append(fetch_raw_content(res.get('url', '')))
-
-            # # Run all fetches concurrently
-            # new_contents = await asyncio.gather(*fetch_tasks)
-
-            # # Replace raw_content for each result
-            # for res, new_content in zip(result.get('results', []), new_contents):
-            #     res['raw_content'] = new_content
-
             return result
         except Exception as e:
             logging.error(f"Tavily search failed for query '{query}': {str(e)}", exc_info=True)
@@ -1585,7 +1545,7 @@ async def tavily_search(
     max_results: Annotated[int, InjectedToolArg] = 5,
     topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
     max_tokens: int = 5000,
-    config: RunnableConfig = None,
+    config: Union[RunnableConfig, None] = None,
 ) -> str:
     """
     Fetches results from Tavily search API.

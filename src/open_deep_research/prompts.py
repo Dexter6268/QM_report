@@ -1,4 +1,4 @@
-report_planner_query_writer_instructions="""你正在为一份研究报告进行资料搜集。
+report_planner_query_writer_instructions = """你正在为一份研究报告进行资料搜集。
 
 <报告主题>
 {topic}
@@ -26,7 +26,7 @@ report_planner_query_writer_instructions="""你正在为一份研究报告进行
 今天是{today}
 """
 
-report_planner_instructions="""
+report_planner_instructions = """
 
 <Task>
 我需要一个简洁且重点突出的报告框架方案。
@@ -68,7 +68,7 @@ report_planner_instructions="""
 每个节需包含以下字段：
 
 - name - 该节标题
-- chapter_name - 该节所属章标题
+- chapter_name - 该节所属章标题（不需要包括第几章，直接写标题本身）
 - description - 本节主要内容的简要说明
 - research - 是否需进行联网搜索（关键要求：必须设置Research=True）
 - content - 章节具体内容（暂留空）
@@ -95,7 +95,7 @@ report_planner_instructions="""
 """
 
 
-final_planner_instructions="""
+final_planner_instructions = """
 
 <任务>
 我需要一个简洁且重点突出的报告最终两章的节标题。
@@ -155,7 +155,7 @@ final_planner_instructions="""
 """
 
 
-query_writer_instructions="""您是一位专业的技术文档撰写专家，正在制定精准的网络搜索查询以收集技术报告章节所需的全面信息。
+query_writer_instructions = """您是一位专业的技术文档撰写专家，正在制定精准的网络搜索查询以收集技术报告章节所需的全面信息。
 
 <报告主题>
 {topic}
@@ -204,12 +204,11 @@ section_writer_instructions = """撰写报告的一个节的正文
 <写作指南>
 - 直接开始该节正文，不需要把节名称作为标题
 - 节正文中尽可能连续，不要过于结构化，如果需要分点，请使用无序列表。
-- 节正文中如果需要包含子标题，最高级别的标题不超过3级（###），最低级别的标题不超过4级（####）
 - 若现有节内容为空，则从头开始撰写
 - 若现有节内容已存在，需将其与原始资料进行整合
 - 严格控制在500-1500字范围内
 - 使用简单清晰的语言
-- 采用短段落形式（每段最多2-3句话）
+- 采用短段落形式
 - 使用Markdown格式
 </写作指南>
 
@@ -230,7 +229,7 @@ section_writer_instructions = """撰写报告的一个节的正文
 </最终核查>
 """
 
-section_writer_inputs=""" 
+section_writer_inputs = """ 
 <报告主题>
 {topic}
 </报告主题>
@@ -297,7 +296,7 @@ follow_up_queries: List[SearchQuery] = Field(
 </输出格式>
 """
 
-final_section_writer_instructions="""你是一位专业的技术文档撰写专家，负责整合报告中的信息并撰写特定节的正文。
+final_section_writer_instructions = """你是一位专业的技术文档撰写专家，负责整合报告中的信息并撰写特定节的正文。
 
 <报告主题>
 {topic}
@@ -323,7 +322,6 @@ final_section_writer_instructions="""你是一位专业的技术文档撰写专�
 1. 撰写格式
 - 使用Markdown格式
 - 内容不需要把节名称作为标题，直接开始该节正文
-- 节正文中如果需要包含子标题，最高级别的标题不超过3级（###）
 - 确保正确的缩进和间距（符合中文习惯的段落首行缩进）
 
 2. 撰写原则：
@@ -331,7 +329,6 @@ final_section_writer_instructions="""你是一位专业的技术文档撰写专�
 - 确保每个词都有价值
 - 直接从节正文开始，不许要把节名称作为标题
 - 节正文中尽可能连续，不要过于结构化，如果需要分点，请使用无序列表。
-- 节正文中如果非要包含子标题，最高级别的标题不超过3级（###），最低级别的标题不超过4级（####）
 </任务要求>
 
 <质量检查>
