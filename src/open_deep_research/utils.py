@@ -5,9 +5,10 @@ import json
 import datetime
 import requests
 import random
-import concurrent
+import concurrent.futures
 import hashlib
 import aiohttp
+from aiohttp import ClientTimeout
 import httpx
 import time
 from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast
@@ -22,8 +23,9 @@ from linkup import LinkupClient
 from tavily import AsyncTavilyClient
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents.aio import SearchClient as AsyncAzureAISearchClient
+from azure.search.documents.models import VectorQuery
 from duckduckgo_search import DDGS
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify
 from pydantic import BaseModel
 from langchain.chat_models import init_chat_model
@@ -445,11 +447,11 @@ async def tavily_search_async(
 
 @traceable
 async def azureaisearch_search_async(
-    search_queries: list[str],
+    search_queries: List[str],
     max_results: int = 5,
     topic: str = "general",
     include_raw_content: bool = True,
-) -> list[dict]:
+) -> List[Dict]:
     """
     Performs concurrent web searches using the Azure AI Search API.
 
@@ -475,8 +477,8 @@ async def azureaisearch_search_async(
         raise ValueError(
             "Missing required environment variables for Azure Search API which are: AZURE_AI_SEARCH_ENDPOINT, AZURE_AI_SEARCH_INDEX_NAME, AZURE_AI_SEARCH_API_KEY"
         )
-    endpoint = os.getenv("AZURE_AI_SEARCH_ENDPOINT")
-    index_name = os.getenv("AZURE_AI_SEARCH_INDEX_NAME")
+    endpoint = os.getenv("AZURE_AI_SEARCH_ENDPOINT", "")
+    index_name = os.getenv("AZURE_AI_SEARCH_INDEX_NAME", "")
     credential = AzureKeyCredential(os.getenv("AZURE_AI_SEARCH_API_KEY", ""))
 
     reranker_key = "@search.reranker_score"
@@ -484,11 +486,12 @@ async def azureaisearch_search_async(
     async with AsyncAzureAISearchClient(endpoint, index_name, credential) as client:
 
         async def do_search(query: str) -> dict:
+
             # search query
             paged = await client.search(
                 search_text=query,
                 vector_queries=[
-                    {"fields": "vector", "kind": "text", "text": query, "exhaustive": True}
+                    VectorQuery(fields="vector", kind="text", text=query, exhaustive=True)
                 ],
                 semantic_configuration_name="fraunhofer-rag-semantic-config",
                 query_type="semantic",
@@ -861,6 +864,8 @@ async def arxiv_search_async(
         try:
             # Create retriever for each query
             retriever = ArxivRetriever(
+                arxiv_search=None,  # Use default arxiv search
+                arxiv_exceptions=None,  # Use default exception handling
                 load_max_docs=load_max_docs,
                 get_full_documents=get_full_documents,
                 load_all_available_meta=load_all_available_meta,
@@ -893,7 +898,7 @@ async def arxiv_search_async(
                     content_parts.append(f"Authors: {metadata['Authors']}")
 
                 # Add publication information
-                published = metadata.get("Published")
+                published = metadata.get("Published", "")
                 published_str = (
                     published.isoformat()
                     if hasattr(published, "isoformat")
@@ -1030,6 +1035,7 @@ async def pubmed_search_async(
 
             # Create PubMed wrapper for the query
             wrapper = PubMedAPIWrapper(
+                parse=None,  # Use default parsing
                 top_k_results=top_k_results,
                 doc_content_chars_max=doc_content_chars_max,
                 email=email if email else "your_email@example.com",
@@ -1145,7 +1151,7 @@ async def pubmed_search_async(
 
 
 @traceable
-async def linkup_search(search_queries, depth: Optional[str] = "standard"):
+async def linkup_search(search_queries, depth: Literal["standard", "deep"] = "standard"):
     """
     Performs concurrent web searches using the Linkup API.
 
@@ -1326,17 +1332,22 @@ async def google_search_async(
                                 new_results = 0
 
                                 for result in result_block:
+                                    if not isinstance(result, Tag):
+                                        continue
                                     link_tag = result.find("a", href=True)
                                     title_tag = (
-                                        link_tag.find("span", class_="CVA68e")
+                                        cast(Tag, link_tag).find("span", class_="CVA68e")
                                         if link_tag
                                         else None
                                     )
                                     description_tag = result.find("span", class_="FrIlee")
 
                                     if link_tag and title_tag and description_tag:
+                                        link_tag = cast(Tag, link_tag)
                                         link = unquote(
-                                            link_tag["href"].split("&")[0].replace("/url?q=", "")
+                                            str(link_tag["href"])
+                                            .split("&")[0]
+                                            .replace("/url?q=", "")
                                         )
 
                                         if link in fetched_links:
@@ -1402,7 +1413,7 @@ async def google_search_async(
                                 try:
                                     await asyncio.sleep(0.2 + random.random() * 0.6)
                                     async with session.get(
-                                        url, headers=headers, timeout=10
+                                        url, headers=headers, timeout=ClientTimeout(total=10)
                                     ) as response:
                                         if response.status == 200:
                                             # Check content type to handle binary files
@@ -1717,7 +1728,7 @@ async def tavily_search(
             model=configurable.summarization_model,
             model_provider=configurable.summarization_model_provider,
             max_retries=configurable.max_structured_output_retries,
-            **extra_kwargs,
+            **cast(Dict, extra_kwargs),
         )
         summarization_tasks = []
         for result in unique_results.values():
