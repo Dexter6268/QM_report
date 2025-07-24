@@ -202,7 +202,11 @@ def human_feedback(
             f"feedback = {feedback}; type = {type(feedback)}"
         )  # Get the first value if feedback is a dict
     # If the user approves the report plan, kick off section writing
-    if isinstance(feedback, bool) and feedback is True:
+    if (
+        (isinstance(feedback, bool) and feedback is True)
+        or isinstance(feedback, str)
+        and feedback.lower() == "true"
+    ):
         # Treat this as approve and kick off section writing
         return Command(
             goto=[
