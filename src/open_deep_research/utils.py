@@ -377,7 +377,7 @@ async def tavily_search_async(
     max_results: int = 5,
     topic: Literal["general", "news", "finance"] = "general",
     include_raw_content: bool = True,
-):
+) -> List[Dict]:
     """
     Performs concurrent web searches with the Tavily API
 
@@ -485,7 +485,7 @@ async def azureaisearch_search_async(
 
     async with AsyncAzureAISearchClient(endpoint, index_name, credential) as client:
 
-        async def do_search(query: str) -> dict:
+        async def do_search(query: str) -> Dict:
 
             # search query
             paged = await client.search(
@@ -2000,52 +2000,20 @@ async def load_mcp_server_config(path: str) -> dict:
 
 async def main():
 
-    queries = keywords = [
-        # 第一章 产品质量发展现状
-        ["2024湖南制造业质量合格率 省统计局", "湖南省质量强省政策2024"],  # 第一节 总体概况
-        ["湖南14地市制造业质量排名", "长株潭衡制造业经济带数据"],  # 第二节 地区概况
-        ["湖南制造业细分行业合格率", "省质检局行业抽检白皮书"],  # 第三节 行业概况
-        # 第二章 地区产品质量状况（全省14个地州市）
-        ["长沙工程机械合格率2024", "长沙智能网联汽车质检"],  # 长沙市
-        ["株洲轨道交通产品抽检", "株洲航空发动机质量缺陷"],  # 株洲市
-        ["湘潭电机质量分析报告", "湘钢特种钢材合格率"],  # 湘潭市
-        ["衡阳输变电设备质量", "衡阳钢管质检问题"],  # 衡阳市
-        ["邵阳发制品行业抽检", "邵阳箱包出口质量"],  # 邵阳市
-        ["岳阳石化产品合格率", "岳阳粮油加工质量"],  # 岳阳市
-        ["常德烟草制品质量", "常德纺织业甲醛超标"],  # 常德市
-        ["张家界旅游商品质量", "莓茶农残检测"],  # 张家界市
-        ["益阳电容器合格率", "安化黑茶重金属"],  # 益阳市
-        ["郴州有色金属质检", "永兴白银纯度问题"],  # 郴州市
-        ["永州农产品加工质量", "永州锰制品合格率"],  # 永州市
-        ["怀化中医药材质量", "靖州杨梅罐头抽检"],  # 怀化市
-        ["娄底钢铁新材料质量", "冷水江锑品合格率"],  # 娄底市
-        ["湘西州矿产品质检", "酒鬼酒塑化剂事件"],  # 湘西州
-        # 第三章 行业产品质量状况
-        ["湖南工程机械故障率", "三一重工焊缝缺陷统计"],  # 装备制造业
-        ["湖南有色冶金行业标准", "株冶集团锌锭纯度"],  # 资源加工业
-        ["湖南预制菜微生物超标", "槟榔食品添加剂"],  # 食药类行业
-        ["醴陵陶瓷铅镉迁移", "浏阳花炮爆炸事故"],  # 消费品工业
-        ["湖南电子信息产品检测", "半导体器件失效分析"],  # 新兴产业
-        # 第四章 问题分析
-        ["湖南制造业质检设备缺口", "中小企业实验室配置率"],  # 检测能力不足
-        ["原材料波动影响案例", "湖南钢铁价格传导机制"],  # 供应链问题
-        ["职业打假人投诉热点", "直播带货质量纠纷"],  # 新业态风险
-        ["环保标准提升影响", "VOCs排放整改成本"],  # 政策合规压力
-        # 第五章 政策建议
-        ["湖南智能检测设备补贴", "工业CT应用示范"],  # 技术升级
-        ["产业链质量协同机制", "主机厂-供应商联检"],  # 体系优化
-        ["质量信用ABCD分级", "湖南企业黑名单公示"],  # 监管创新
-        ["湘籍质检人才培养", "职业院校检测专业"],  # 人才建设
-        ["质量品牌提升计划", "湖南制造国际认证"],  # 品牌战略
+    queries = [
+        "湖南省制造业产品质量合格率2024年94%突破 政策背景 重要意义",
+        "2024年湖南省产品质量监管创新措施 制造业质量提升举措",
+        "湖南省2024年制造业产品质量总体发展态势 合格率统计数据",
     ]
-    search_tasks = [
-        tavily_search.ainvoke({"queries": query, "max_results": 2}) for query in queries
-    ]
-
-    responses = await asyncio.gather(*search_tasks)
+    responses = await tavily_search_async(queries)
     for response in responses:
         logging.info("\n" + "-" * 80)
-        logging.info(response[: min(1000, len(response))] + "...\n\n")
+        logging.info(f"Query: {response['query']}")
+        results = response["results"]
+        for result in results:
+            logging.info(f"Title: {result['title']}")
+            logging.info(f"URL: {result['url']}")
+            logging.info(f"Content: {result['content'][:1000]}...")
 
 
 if __name__ == "__main__":
@@ -2053,7 +2021,7 @@ if __name__ == "__main__":
         level=logging.DEBUG,
         format="%(asctime)s | %(filename)s | %(funcName)s | %(levelname)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        filename="log.txt",
+        filename="logs/log.txt",
         encoding="utf-8",
         filemode="w",
     )
