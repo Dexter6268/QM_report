@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Any, Literal, cast, Dict
+from typing import Any, Literal, cast, Dict, List
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -18,6 +18,7 @@ from open_deep_research.state import (
     SectionState,
     SectionOutputState,
     Queries,
+    SearchQuery,
     Feedback,
 )
 
@@ -202,10 +203,8 @@ def human_feedback(
             f"feedback = {feedback}; type = {type(feedback)}"
         )  # Get the first value if feedback is a dict
     # If the user approves the report plan, kick off section writing
-    if (
-        (isinstance(feedback, bool) and feedback is True)
-        or isinstance(feedback, str)
-        and feedback.lower() == "true"
+    if (isinstance(feedback, bool) and feedback is True) or (
+        isinstance(feedback, str) and feedback.lower() == "true"
     ):
         # Treat this as approve and kick off section writing
         return Command(
@@ -227,7 +226,9 @@ def human_feedback(
         raise TypeError(f"Interrupt value of type {type(feedback)} is not supported.")
 
 
-async def generate_queries(state: SectionState, config: RunnableConfig):
+async def generate_queries(
+    state: SectionState, config: RunnableConfig
+) -> Dict[str, List[SearchQuery]]:
     """Generate search queries for researching a specific section.
 
     This node uses an LLM to generate targeted search queries based on the
@@ -277,7 +278,7 @@ async def generate_queries(state: SectionState, config: RunnableConfig):
     return {"search_queries": queries.queries}
 
 
-async def search_web(state: SectionState, config: RunnableConfig) -> Dict[str, Any]:
+async def search_web(state: SectionState, config: RunnableConfig) -> Dict[str, str | int]:
     """Execute web searches for the section queries.
 
     This node:
