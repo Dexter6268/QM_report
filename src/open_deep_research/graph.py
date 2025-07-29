@@ -77,7 +77,7 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     configurable = WorkflowConfiguration.from_runnable_config(config)
     report_structure = configurable.report_structure
     number_of_queries = configurable.number_of_queries
-    search_api = str(get_config_value(configurable.search_api))
+    search_api = get_config_value(configurable.search_api)
     search_api_config = (
         configurable.search_api_config or {}
     )  # Get the config dict, default to empty
@@ -297,7 +297,7 @@ async def search_web(state: SectionState, config: RunnableConfig) -> Dict[str, s
 
     # Get configuration
     configurable = WorkflowConfiguration.from_runnable_config(config)
-    search_api = cast(str, get_config_value(configurable.search_api))
+    search_api = get_config_value(configurable.search_api)
     search_api_config = (
         configurable.search_api_config or {}
     )  # Get the config dict, default to empty
@@ -556,21 +556,6 @@ def compile_final_report(state: ReportState, config: RunnableConfig):
     references_section, sections = process_references_from_sections(sections)
     all_sections = format_sections(sections, final=True)
     final_report = all_sections + references_section
-
-    # # Format system instructions
-    # system_instructions = compile_final_report_instructions.format(report_content=all_sections)
-
-    # # Generate section
-    # writer_model = get_model(configurable, "writer")
-    # final_report = cast(
-    #     str,
-    #     writer_model.invoke(
-    #         [
-    #             SystemMessage(content=system_instructions),
-    #             HumanMessage(content="根据给定的系统提示撰写报告节内容"),
-    #         ]
-    #     ).content,
-    # )
 
     timestamp = datetime.now().strftime("%Y-%m-%d-%H_%M")  # 格式：2025-07-18 14:30
     filename = f"examples/Report_at_{timestamp}.md"

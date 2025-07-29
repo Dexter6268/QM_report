@@ -11,7 +11,7 @@ import aiohttp
 from aiohttp import ClientTimeout
 import httpx
 import time
-from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast
+from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast, overload
 from enum import Enum
 from urllib.parse import unquote
 from collections import defaultdict, OrderedDict
@@ -64,9 +64,9 @@ def get_model(configurable: Configuration, mode: str) -> BaseChatModel:
     if mode not in mode_map:
         raise ValueError(f"Invalid mode: {mode}. Expected one of {list(mode_map.keys())}.")
     model_attr, provider_attr, kwargs_attr = mode_map[mode]
-    model_name = str(get_config_value(getattr(configurable, model_attr)))
-    model_provider = str(get_config_value(getattr(configurable, provider_attr)))
-    model_kwargs = cast(Dict[str, Any], get_config_value(getattr(configurable, kwargs_attr) or {}))
+    model_name = get_config_value(getattr(configurable, model_attr))
+    model_provider = get_config_value(getattr(configurable, provider_attr))
+    model_kwargs = get_config_value(getattr(configurable, kwargs_attr) or {})
     return init_chat_model(model=model_name, model_provider=model_provider, **model_kwargs)
 
 
@@ -92,6 +92,14 @@ async def reduce_source_str(input_string: str, max_tokens: int = 60000) -> str:
         input_string = input_string[:len_str]
         logging.warning(f"超过最大限制 {max_tokens}，已缩减字符串长度到 {len_str} 字符")
     return input_string
+
+
+@overload
+def get_config_value(value: str) -> str: ...
+@overload
+def get_config_value(value: Dict[str, Any]) -> Dict[str, Any]: ...
+@overload
+def get_config_value(value: Enum) -> str: ...
 
 
 def get_config_value(value: Union[str, Dict[str, Any], Enum]) -> Union[str, Dict[str, Any]]:
