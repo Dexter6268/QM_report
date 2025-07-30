@@ -49,6 +49,7 @@ htmlcov/
 # Logs
 *.log
 logs/
+todo.md
 
 $ jupyter notebook
 learn.ipynb
