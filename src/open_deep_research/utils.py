@@ -7,6 +7,8 @@ import requests
 import random
 import concurrent.futures
 import hashlib
+import pickle
+from pathlib import Path
 import aiohttp
 from aiohttp import ClientTimeout
 import httpx
@@ -32,17 +34,20 @@ from langchain.chat_models import init_chat_model
 from langchain.embeddings import init_embeddings
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolArg
-from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_core.vectorstores import InMemoryVectorStore, VectorStore
+from langchain_core.vectorstores.base import VectorStoreRetriever
 from langchain_community.retrievers import ArxivRetriever
 from langchain_community.utilities.pubmed import PubMedAPIWrapper
 from langchain_core.tools import tool
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langsmith import traceable
 
+from open_deep_research.knowledge_base import KnowledgeBaseManager
 from open_deep_research.configuration import Configuration
 from open_deep_research.state import Section
 from open_deep_research.prompts import SUMMARIZATION_PROMPT
@@ -1683,7 +1688,7 @@ TAVILY_SEARCH_DESCRIPTION = (
 )
 
 
-@tool(description=TAVILY_SEARCH_DESCRIPTION)
+# @tool(description=TAVILY_SEARCH_DESCRIPTION)
 async def tavily_search(
     queries: List[str],
     max_results: Annotated[int, InjectedToolArg] = 5,
@@ -1712,6 +1717,16 @@ async def tavily_search(
 
     # Deduplicate results by URL
     unique_results = {}
+    """
+    'url': {
+        'title': str,             # Title of the search result
+        'url': str,               # URL of the result
+        'content': str,           # Summary/snippet of content
+        'raw_content': str|None,  # Full content if available
+        'score': float,           # Relevance score (if available)
+        'query': str,             # Original query used to fetch this result
+    }
+    """
     for response in search_results:
         for result in response["results"]:
             url = result["url"]
@@ -1761,7 +1776,8 @@ async def tavily_search(
             )
         }
     elif configurable.process_search_results == "split_and_rerank":
-        embeddings = cast(Embeddings, init_embeddings("openai:text-embedding-3-small"))
+        # embeddings = cast(Embeddings, init_embeddings("openai:text-embedding-3-small"))
+        embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh")
         results_by_query = itertools.groupby(unique_results.values(), key=lambda x: x["query"])
         all_retrieved_docs = []
         for query, query_results in results_by_query:
@@ -1934,27 +1950,181 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
 
 
 def split_and_rerank_search_results(
+    embeddings: Embeddings,
+    query: str,
+    search_results: list[dict],
+    max_chunks: int = 5,
+    use_local_kb: bool = True,
+    save_to_local: bool = True,
+) -> List[Document]:
+    """
+    使用新的知识库管理策略的版本 - 修正整合逻辑
+    """
+    if not use_local_kb:
+        # 如果不使用本地知识库，直接处理搜索结果
+        return _process_search_results_only(embeddings, query, search_results, max_chunks)
+
+    # 使用知识库管理器
+    kb_manager = KnowledgeBaseManager(embeddings)
+
+    # 加载或创建知识库
+    existing_kb, existing_docs, kb_id, is_new = kb_manager.load_or_create_knowledge_base(query)
+
+    # 处理搜索结果
+    new_documents = []
+    if search_results:
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1500, chunk_overlap=200, add_start_index=True
+        )
+
+        search_documents = [
+            Document(
+                page_content=result.get("raw_content") or result["content"],
+                metadata={
+                    "url": result["url"],
+                    "title": result["title"],
+                    "source": "search_result",
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "kb_id": kb_id,  # 添加知识库ID标识
+                },
+            )
+            for result in search_results
+        ]
+
+        new_splits = text_splitter.split_documents(search_documents)
+        new_documents.extend(new_splits)
+
+    # 去重和合并文档
+    all_documents = existing_docs.copy()
+    existing_urls = {doc.metadata.get("url", "") for doc in existing_docs}
+
+    new_unique_docs = []
+    for doc in new_documents:
+        url = doc.metadata.get("url", "")
+        if url not in existing_urls:
+            all_documents.append(doc)
+            new_unique_docs.append(doc)
+            existing_urls.add(url)
+
+    # 日志信息
+    if new_unique_docs:
+        if is_new:
+            logging.info(f"Adding {len(new_unique_docs)} documents to new knowledge base {kb_id}")
+        else:
+            logging.info(
+                f"Integrating {len(new_unique_docs)} new documents into existing knowledge base {kb_id}"
+            )
+    else:
+        logging.info(f"No new unique documents to add to knowledge base {kb_id}")
+
+    # 创建或更新向量存储
+    if existing_kb and new_unique_docs:
+        # 情况1: 现有知识库 + 新文档 -> 整合到现有知识库
+        try:
+            existing_kb.add_documents(new_unique_docs)
+            vector_store = existing_kb
+            logging.info(
+                f"Successfully integrated {len(new_unique_docs)} new documents into existing KB {kb_id}"
+            )
+        except Exception as e:
+            logging.error(f"Failed to integrate documents into existing vector store {kb_id}: {e}")
+            # 降级处理：重建向量存储
+            logging.info(
+                f"Rebuilding vector store for KB {kb_id} with all {len(all_documents)} documents"
+            )
+            vector_store = InMemoryVectorStore(embeddings)
+            vector_store.add_documents(all_documents)
+    elif existing_kb and not new_unique_docs:
+        # 情况2: 现有知识库 + 无新文档 -> 直接使用现有知识库
+        vector_store = existing_kb
+        logging.info(f"Using existing knowledge base {kb_id} without modifications")
+    elif not existing_kb and new_unique_docs:
+        # 情况3: 新知识库 + 新文档 -> 创建新向量存储
+        vector_store = InMemoryVectorStore(embeddings)
+        vector_store.add_documents(all_documents)
+        logging.info(f"Created new knowledge base {kb_id} with {len(all_documents)} documents")
+    else:
+        # 情况4: 新知识库 + 无新文档 -> 创建空向量存储（不太可能出现）
+        vector_store = InMemoryVectorStore(embeddings)
+        logging.warning(f"Created empty knowledge base {kb_id}")
+
+    # 检索相关文档
+    if all_documents:
+        retrieved_docs = vector_store.similarity_search(query, k=max_chunks)
+
+        # 添加检索元数据
+        for doc in retrieved_docs:
+            doc.metadata["retrieved_at"] = datetime.datetime.now().isoformat()
+            doc.metadata["query"] = query
+            doc.metadata["kb_id"] = kb_id
+
+        # 保存更新后的知识库（只有在有新内容或是新知识库时才保存）
+        if save_to_local and (new_unique_docs or is_new):
+            kb_manager.save_knowledge_base(kb_id, vector_store, query, all_documents)
+
+            # 更新日志信息
+            if is_new:
+                logging.info(
+                    f"Saved new knowledge base {kb_id} with {len(all_documents)} documents"
+                )
+            else:
+                logging.info(
+                    f"Updated existing knowledge base {kb_id}, now contains {len(all_documents)} documents"
+                )
+
+        logging.info(
+            f"Retrieved {len(retrieved_docs)} chunks from KB {kb_id} (total: {len(all_documents)} docs)"
+        )
+        return retrieved_docs
+    else:
+        logging.warning(f"No documents available for retrieval in KB {kb_id}")
+        return []
+
+
+def _process_search_results_only(
     embeddings: Embeddings, query: str, search_results: list[dict], max_chunks: int = 5
-):
-    # split webpage content into chunks
+) -> List[Document]:
+    """
+    仅处理搜索结果，不使用本地知识库的辅助函数
+    """
+    if not search_results:
+        return []
+
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1500, chunk_overlap=200, add_start_index=True
     )
-    documents = [
+
+    search_documents = [
         Document(
             page_content=result.get("raw_content") or result["content"],
-            metadata={"url": result["url"], "title": result["title"]},
+            metadata={
+                "url": result["url"],
+                "title": result["title"],
+                "source": "search_result",
+                "timestamp": datetime.datetime.now().isoformat(),
+            },
         )
         for result in search_results
     ]
-    all_splits = text_splitter.split_documents(documents)
 
-    # index chunks
+    # 分割文档
+    splits = text_splitter.split_documents(search_documents)
+
+    # 创建临时向量存储
     vector_store = InMemoryVectorStore(embeddings)
-    vector_store.add_documents(documents=all_splits)
+    vector_store.add_documents(splits)
 
-    # retrieve relevant chunks
+    # 检索相关文档
     retrieved_docs = vector_store.similarity_search(query, k=max_chunks)
+
+    # # 添加检索元数据
+    # for doc in retrieved_docs:
+    #     doc.metadata["retrieved_at"] = datetime.datetime.now().isoformat()
+    #     doc.metadata["query"] = query
+
+    logging.info(
+        f"Processed {len(splits)} chunks without local KB, retrieved {len(retrieved_docs)}"
+    )
     return retrieved_docs
 
 
@@ -1976,7 +2146,7 @@ def stitch_documents_by_url(documents: list[Document]) -> list[Document]:
     for docs in url_to_docs.values():
         stitched_doc = Document(
             page_content="\n\n".join([f"...{doc.page_content}..." for doc in docs]),
-            metadata=cast(Document, docs[0]).metadata,
+            metadata=docs[0].metadata,
         )
         stitched_docs.append(stitched_doc)
 
@@ -2011,26 +2181,39 @@ async def main():
     queries = [
         "湖南省制造业产品质量合格率2024年94%突破 政策背景 重要意义",
         "2024年湖南省产品质量监管创新措施 制造业质量提升举措",
-        "湖南省2024年制造业产品质量总体发展态势 合格率统计数据",
     ]
-    responses = await tavily_search_async(queries)
-    for response in responses:
-        logging.info("\n" + "-" * 80)
-        logging.info(f"Query: {response['query']}")
-        results = response["results"]
-        for result in results:
-            logging.info(f"Title: {result['title']}")
-            logging.info(f"URL: {result['url']}")
-            logging.info(f"Content: {result['content'][:1000]}...")
+    config = RunnableConfig()
+    config["configurable"] = {"process_search_results": "split_and_rerank"}
+    # full_inspect_kb(queries[0])
+    source_str = await tavily_search(queries, config=config)
+    print(source_str)
+    # """
+    # 'url': {
+    #     'title': str,             # Title of the search result
+    #     'url': str,               # URL of the result
+    #     'content': str,           # Summary/snippet of content
+    # }
+    # """
+    # for url, result in unique_results.items():
+    #     logging.info(f"\n\n--- SOURCE: {result['title']} ---")
+    #     logging.info(f"URL: {url}")
+    #     logging.info(f"content:\n{result['content']}")
 
 
 if __name__ == "__main__":
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    project_root = Path(__file__).parent.parent.parent
+    logs_dir = project_root / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    log_dir = logs_dir / f"log_{timestamp}.txt"
+
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s | %(filename)s | %(funcName)s | %(levelname)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        filename="logs/log.txt",
+        filename=log_dir,
         encoding="utf-8",
         filemode="w",
     )
+    # demo_knowledge_base_management()
     asyncio.run(main())
