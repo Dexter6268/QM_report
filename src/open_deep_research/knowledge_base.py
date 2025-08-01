@@ -6,20 +6,14 @@ import datetime
 import hashlib
 import pickle
 from pathlib import Path
-import httpx
-import time
-from typing import List, Optional, Dict, Any, Union, Literal, Annotated, cast, overload
-from enum import Enum
-from urllib.parse import unquote
-from collections import defaultdict, OrderedDict
+from typing import List, Optional, Dict, Any
+from collections import defaultdict
 import logging
 
-from azure.search.documents.models import VectorQuery
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.vectorstores import InMemoryVectorStore, VectorStore
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.vectorstores import VectorStore
 
 
 class KnowledgeBaseManager:
