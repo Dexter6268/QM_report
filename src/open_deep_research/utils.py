@@ -1688,7 +1688,7 @@ TAVILY_SEARCH_DESCRIPTION = (
 )
 
 
-# @tool(description=TAVILY_SEARCH_DESCRIPTION)
+@tool(description=TAVILY_SEARCH_DESCRIPTION)
 async def tavily_search(
     queries: List[str],
     max_results: Annotated[int, InjectedToolArg] = 5,
@@ -2185,8 +2185,8 @@ async def main():
     config = RunnableConfig()
     config["configurable"] = {"process_search_results": "split_and_rerank"}
     # full_inspect_kb(queries[0])
-    source_str = await tavily_search(queries, config=config)
-    print(source_str)
+    # source_str = await tavily_search(queries, config=config)
+    # print(source_str)
     # """
     # 'url': {
     #     'title': str,             # Title of the search result

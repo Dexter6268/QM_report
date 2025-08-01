@@ -50,6 +50,7 @@ htmlcov/
 *.log
 logs/
 todo.md
+knowledge_base/
 
 $ jupyter notebook
 learn.ipynb
