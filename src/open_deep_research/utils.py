@@ -39,8 +39,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolArg
-from langchain_core.vectorstores import InMemoryVectorStore, VectorStore
-from langchain_core.vectorstores.base import VectorStoreRetriever
+from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.retrievers import ArxivRetriever
 from langchain_community.utilities.pubmed import PubMedAPIWrapper
 from langchain_core.tools import tool
@@ -119,9 +118,7 @@ def get_config_value(value: Union[str, Dict[str, Any], Enum]) -> Union[str, Dict
         return value.value
 
 
-def get_search_params(
-    search_api: str, search_api_config: Optional[Dict[str, Any]]
-) -> Dict[str, Any]:
+def get_search_params(search_api: str, search_api_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Filters the search_api_config dictionary to include only parameters accepted by the specified search API.
 
@@ -213,9 +210,7 @@ def deduplicate_and_format_sources(
                 print(f"Warning: No raw_content found for source {source['url']}")
             if len(raw_content) > char_limit:
                 raw_content = raw_content[:char_limit] + "... [truncated]"
-            formatted_text += (
-                f"Full source content limited to {max_tokens_per_source} tokens: {raw_content}\n\n"
-            )
+            formatted_text += f"Full source content limited to {max_tokens_per_source} tokens: {raw_content}\n\n"
         formatted_text += f"{'='*80}\n\n"  # End section separator
 
     return formatted_text.strip()
@@ -282,9 +277,7 @@ def process_references_from_sections(sections: List[Section]) -> tuple[str, List
         content = section.content
 
         # 查找该节中的资料来源部分
-        source_match = re.search(
-            r"### 资料来源\n((?:[^\n#]|(?:\n(?!#{1,3})))+)", content, re.DOTALL
-        )
+        source_match = re.search(r"### 资料来源\n((?:[^\n#]|(?:\n(?!#{1,3})))+)", content, re.DOTALL)
         if source_match:
             source_content = source_match.group(1)
 
@@ -369,9 +362,7 @@ def process_references_from_sections(sections: List[Section]) -> tuple[str, List
             for start_pos, end_pos, old_id in sorted(section_citations, reverse=True):
                 if (section_idx, old_id) in old_to_new_id:
                     new_id = old_to_new_id[(section_idx, old_id)]
-                    updated_content = (
-                        updated_content[:start_pos] + f"[{new_id}]" + updated_content[end_pos:]
-                    )
+                    updated_content = updated_content[:start_pos] + f"[{new_id}]" + updated_content[end_pos:]
 
         # 更新Section对象
         sections[section_idx].content = updated_content
@@ -503,9 +494,7 @@ async def azureaisearch_search_async(
             # search query
             paged = await client.search(
                 search_text=query,
-                vector_queries=[
-                    VectorQuery(fields="vector", kind="text", text=query, exhaustive=True)
-                ],
+                vector_queries=[VectorQuery(fields="vector", kind="text", text=query, exhaustive=True)],
                 semantic_configuration_name="fraunhofer-rag-semantic-config",
                 query_type="semantic",
                 select=["url", "title", "chunk", "creationTime", "lastModifiedTime"],
@@ -578,9 +567,7 @@ def perplexity_search(search_queries):
             ],
         }
 
-        response = requests.post(
-            "https://api.perplexity.ai/chat/completions", headers=headers, json=payload
-        )
+        response = requests.post("https://api.perplexity.ai/chat/completions", headers=headers, json=payload)
         response.raise_for_status()  # Raise exception for bad status codes
 
         # Parse the response
@@ -841,9 +828,7 @@ async def exa_search(
 
 
 @traceable
-async def arxiv_search_async(
-    search_queries, load_max_docs=5, get_full_documents=True, load_all_available_meta=True
-):
+async def arxiv_search_async(search_queries, load_max_docs=5, get_full_documents=True, load_all_available_meta=True):
     """
     Performs concurrent searches on arXiv using the ArxivRetriever.
 
@@ -913,9 +898,7 @@ async def arxiv_search_async(
                 # Add publication information
                 published = metadata.get("Published", "")
                 published_str = (
-                    published.isoformat()
-                    if hasattr(published, "isoformat")
-                    else str(published) if published else ""
+                    published.isoformat() if hasattr(published, "isoformat") else str(published) if published else ""
                 )
                 if published_str:
                     content_parts.append(f"Published: {published_str}")
@@ -1009,9 +992,7 @@ async def arxiv_search_async(
 
 
 @traceable
-async def pubmed_search_async(
-    search_queries, top_k_results=5, email=None, api_key=None, doc_content_chars_max=4000
-):
+async def pubmed_search_async(search_queries, top_k_results=5, email=None, api_key=None, doc_content_chars_max=4000):
     """
     Performs concurrent searches on PubMed using the PubMedAPIWrapper.
 
@@ -1201,8 +1182,7 @@ async def linkup_search(search_queries, depth: Literal["standard", "deep"] = "st
         search_results.append(
             {
                 "results": [
-                    {"title": result.name, "url": result.url, "content": result.content}
-                    for result in response.results
+                    {"title": result.name, "url": result.url, "content": result.content} for result in response.results
                 ],
             }
         )
@@ -1242,9 +1222,7 @@ async def google_search_async(
         lynx_version = f"Lynx/{random.randint(2, 3)}.{random.randint(8, 9)}.{random.randint(0, 2)}"
         libwww_version = f"libwww-FM/{random.randint(2, 3)}.{random.randint(13, 15)}"
         ssl_mm_version = f"SSL-MM/{random.randint(1, 2)}.{random.randint(3, 5)}"
-        openssl_version = (
-            f"OpenSSL/{random.randint(1, 3)}.{random.randint(0, 4)}.{random.randint(0, 9)}"
-        )
+        openssl_version = f"OpenSSL/{random.randint(1, 3)}.{random.randint(0, 4)}.{random.randint(0, 9)}"
         return f"{lynx_version} {libwww_version} {ssl_mm_version} {openssl_version}"
 
     # Create executor for running synchronous operations
@@ -1348,20 +1326,12 @@ async def google_search_async(
                                     if not isinstance(result, Tag):
                                         continue
                                     link_tag = result.find("a", href=True)
-                                    title_tag = (
-                                        cast(Tag, link_tag).find("span", class_="CVA68e")
-                                        if link_tag
-                                        else None
-                                    )
+                                    title_tag = cast(Tag, link_tag).find("span", class_="CVA68e") if link_tag else None
                                     description_tag = result.find("span", class_="FrIlee")
 
                                     if link_tag and title_tag and description_tag:
                                         link_tag = cast(Tag, link_tag)
-                                        link = unquote(
-                                            str(link_tag["href"])
-                                            .split("&")[0]
-                                            .replace("/url?q=", "")
-                                        )
+                                        link = unquote(str(link_tag["href"]).split("&")[0].replace("/url?q=", ""))
 
                                         if link in fetched_links:
                                             continue
@@ -1401,9 +1371,7 @@ async def google_search_async(
 
                     # Execute search in thread pool
                     loop = asyncio.get_running_loop()
-                    search_results = await loop.run_in_executor(
-                        executor, lambda: google_search(query, max_results)
-                    )
+                    search_results = await loop.run_in_executor(executor, lambda: google_search(query, max_results))
 
                     # Process the results
                     results = search_results
@@ -1430,9 +1398,7 @@ async def google_search_async(
                                     ) as response:
                                         if response.status == 200:
                                             # Check content type to handle binary files
-                                            content_type = response.headers.get(
-                                                "Content-Type", ""
-                                            ).lower()
+                                            content_type = response.headers.get("Content-Type", "").lower()
 
                                             # Handle PDFs and other binary files
                                             if (
@@ -1451,9 +1417,7 @@ async def google_search_async(
                                                     result["raw_content"] = soup.get_text()
                                                 except UnicodeDecodeError as ude:
                                                     # Fallback if we still have decoding issues
-                                                    result["raw_content"] = (
-                                                        f"[Could not decode content: {str(ude)}]"
-                                                    )
+                                                    result["raw_content"] = f"[Could not decode content: {str(ude)}]"
                                 except Exception as e:
                                     print(f"Warning: Failed to fetch content for {url}: {str(e)}")
                                     result["raw_content"] = f"[Error fetching content: {str(e)}]"
@@ -1586,9 +1550,7 @@ async def duckduckgo_search(search_queries: List[str]):
                         if retry_count > 0:
                             # Random delay with exponential backoff
                             delay = backoff_factor**retry_count + random.random()
-                            print(
-                                f"Retry {retry_count}/{max_retries} for query '{query}' after {delay:.2f}s delay"
-                            )
+                            print(f"Retry {retry_count}/{max_retries} for query '{query}' after {delay:.2f}s delay")
                             time.sleep(delay)
 
                             # Add a random element to the query to bypass caching/rate limits
@@ -1631,9 +1593,7 @@ async def duckduckgo_search(search_queries: List[str]):
                     # Store the exception and retry
                     last_exception = e
                     retry_count += 1
-                    print(
-                        f"DuckDuckGo search error: {str(e)}. Retrying {retry_count}/{max_retries}"
-                    )
+                    print(f"DuckDuckGo search error: {str(e)}. Retrying {retry_count}/{max_retries}")
 
                     # If not a rate limit error, don't retry
                     if "Ratelimit" not in str(e) and retry_count >= 1:
@@ -1688,13 +1648,12 @@ TAVILY_SEARCH_DESCRIPTION = (
 )
 
 
-@tool(description=TAVILY_SEARCH_DESCRIPTION)
+# @tool(description=TAVILY_SEARCH_DESCRIPTION)
 async def tavily_search(
     queries: List[str],
     max_results: Annotated[int, InjectedToolArg] = 5,
     topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
-    max_tokens: int = 5000,
-    config: Union[RunnableConfig, None] = None,
+    config: Optional[RunnableConfig] = None,
 ) -> str:
     """
     Fetches results from Tavily search API.
@@ -1708,9 +1667,7 @@ async def tavily_search(
         str: A formatted string of search results
     """
     # Use tavily_search_async with include_raw_content=True to get content directly
-    search_results = await tavily_search_async(
-        queries, max_results=max_results, topic=topic, include_raw_content=True
-    )
+    search_results = await tavily_search_async(queries, max_results=max_results, topic=topic, include_raw_content=True)
 
     # Format the search results directly using the raw_content already provided
     formatted_output = f"\n搜索结果: \n\n"
@@ -1737,6 +1694,8 @@ async def tavily_search(
         return None
 
     configurable = Configuration.from_runnable_config(config)
+    logging.error(f"sum or split in configurable in tavily_search: {configurable.process_search_results}")
+    max_tokens = configurable.max_tokens
     max_char_to_include = 10_000
 
     # TODO: share this behavior across all search implementations / tools
@@ -1771,25 +1730,27 @@ async def tavily_search(
                 "title": result["title"],
                 "content": result["content"] if summary is None else summary,
             }
-            for url, result, summary in zip(
-                unique_results.keys(), unique_results.values(), summaries
-            )
+            for url, result, summary in zip(unique_results.keys(), unique_results.values(), summaries)
         }
     elif configurable.process_search_results == "split_and_rerank":
+
         # embeddings = cast(Embeddings, init_embeddings("openai:text-embedding-3-small"))
-        embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh")
+        async def get_embeddings_async():
+            return await asyncio.to_thread(
+                init_embeddings, "huggingface:BAAI/bge-small-zh", model_kwargs={"local_files_only": True}
+            )
+
+        embeddings = cast(Embeddings, await get_embeddings_async())
+        # embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh")
         results_by_query = itertools.groupby(unique_results.values(), key=lambda x: x["query"])
         all_retrieved_docs = []
         for query, query_results in results_by_query:
-            retrieved_docs = split_and_rerank_search_results(
-                embeddings, query, cast(List, query_results)
-            )
+            retrieved_docs = await split_and_rerank_search_results(embeddings, query, cast(List, query_results))
             all_retrieved_docs.extend(retrieved_docs)
 
         stitched_docs = stitch_documents_by_url(all_retrieved_docs)
         unique_results = {
-            doc.metadata["url"]: {"title": doc.metadata["title"], "content": doc.page_content}
-            for doc in stitched_docs
+            doc.metadata["url"]: {"title": doc.metadata["title"], "content": doc.page_content} for doc in stitched_docs
         }
 
     # Format the unique results
@@ -1808,9 +1769,7 @@ async def tavily_search(
 
 
 @tool
-async def azureaisearch_search(
-    queries: List[str], max_results: int = 5, topic: str = "general"
-) -> str:
+async def azureaisearch_search(queries: List[str], max_results: int = 5, topic: str = "general") -> str:
     """
     Fetches results from Azure AI Search API.
 
@@ -1842,9 +1801,7 @@ async def azureaisearch_search(
         formatted_output += f"URL: {url}\n\n"
         formatted_output += f"SUMMARY:\n{result['content']}\n\n"
         if result.get("raw_content"):
-            formatted_output += (
-                f"FULL CONTENT:\n{result['raw_content'][:30000]}"  # Limit content size
-            )
+            formatted_output += f"FULL CONTENT:\n{result['raw_content'][:30000]}"  # Limit content size
         formatted_output += "\n\n" + "-" * 80 + "\n"
 
     if unique_results:
@@ -1854,7 +1811,10 @@ async def azureaisearch_search(
 
 
 async def select_and_execute_search(
-    search_api: str, query_list: list[str], params_to_pass: dict, max_tokens: int = 5000
+    search_api: str,
+    query_list: list[str],
+    params_to_pass: dict,
+    config: Optional[RunnableConfig] = None,
 ) -> str:
     """Select and execute the appropriate search API.
 
@@ -1872,9 +1832,10 @@ async def select_and_execute_search(
     if search_api == "tavily":
         # Tavily search tool used with both workflow and agent
         # and returns a formatted source string
-        return await tavily_search.ainvoke(
-            {"queries": query_list, **params_to_pass, "max_tokens": max_tokens}
-        )
+        # return await tavily_search.ainvoke(
+        #     {"queries": query_list, **params_to_pass}, config=config
+        # )
+        return await tavily_search(queries=query_list, **params_to_pass, config=config)
     elif search_api == "duckduckgo":
         # DuckDuckGo search tool used with both workflow and agent
         return await duckduckgo_search.ainvoke({"search_queries": query_list})
@@ -1917,9 +1878,7 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
                     "cache_control": {"type": "ephemeral", "ttl": "1h"},
                 }
             ]
-        logging.debug(
-            f"Summarizing webpage content{webpage_content[:100]}..."
-        )  # Log first 100 chars for context
+        logging.debug(f"Summarizing webpage content{webpage_content[:100]}...")  # Log first 100 chars for context
         summary = cast(
             Summary,
             await model.with_structured_output(Summary)
@@ -1936,9 +1895,7 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
         )
         logging.debug("Webpage content{webpage_content[:100]} summarized successfully.")
     except:
-        logging.error(
-            "Failed to summarize webpage content{webpage_content[:100]}, returning raw content instead."
-        )
+        logging.error("Failed to summarize webpage content{webpage_content[:100]}, returning raw content instead.")
         # fall back on the raw content
         return webpage_content
 
@@ -1949,7 +1906,7 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
     return format_summary(summary)
 
 
-def split_and_rerank_search_results(
+async def split_and_rerank_search_results(
     embeddings: Embeddings,
     query: str,
     search_results: list[dict],
@@ -1968,14 +1925,12 @@ def split_and_rerank_search_results(
     kb_manager = KnowledgeBaseManager(embeddings)
 
     # 加载或创建知识库
-    existing_kb, existing_docs, kb_id, is_new = kb_manager.load_or_create_knowledge_base(query)
+    existing_kb, existing_docs, kb_id, is_new = await kb_manager.load_or_create_knowledge_base(query)
 
     # 处理搜索结果
     new_documents = []
     if search_results:
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500, chunk_overlap=200, add_start_index=True
-        )
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200, add_start_index=True)
 
         search_documents = [
             Document(
@@ -2011,9 +1966,7 @@ def split_and_rerank_search_results(
         if is_new:
             logging.info(f"Adding {len(new_unique_docs)} documents to new knowledge base {kb_id}")
         else:
-            logging.info(
-                f"Integrating {len(new_unique_docs)} new documents into existing knowledge base {kb_id}"
-            )
+            logging.info(f"Integrating {len(new_unique_docs)} new documents into existing knowledge base {kb_id}")
     else:
         logging.info(f"No new unique documents to add to knowledge base {kb_id}")
 
@@ -2023,15 +1976,11 @@ def split_and_rerank_search_results(
         try:
             existing_kb.add_documents(new_unique_docs)
             vector_store = existing_kb
-            logging.info(
-                f"Successfully integrated {len(new_unique_docs)} new documents into existing KB {kb_id}"
-            )
+            logging.info(f"Successfully integrated {len(new_unique_docs)} new documents into existing KB {kb_id}")
         except Exception as e:
             logging.error(f"Failed to integrate documents into existing vector store {kb_id}: {e}")
             # 降级处理：重建向量存储
-            logging.info(
-                f"Rebuilding vector store for KB {kb_id} with all {len(all_documents)} documents"
-            )
+            logging.info(f"Rebuilding vector store for KB {kb_id} with all {len(all_documents)} documents")
             vector_store = InMemoryVectorStore(embeddings)
             vector_store.add_documents(all_documents)
     elif existing_kb and not new_unique_docs:
@@ -2060,21 +2009,15 @@ def split_and_rerank_search_results(
 
         # 保存更新后的知识库（只有在有新内容或是新知识库时才保存）
         if save_to_local and (new_unique_docs or is_new):
-            kb_manager.save_knowledge_base(kb_id, vector_store, query, all_documents)
+            await kb_manager.save_knowledge_base(kb_id, vector_store, query, all_documents)
 
             # 更新日志信息
             if is_new:
-                logging.info(
-                    f"Saved new knowledge base {kb_id} with {len(all_documents)} documents"
-                )
+                logging.info(f"Saved new knowledge base {kb_id} with {len(all_documents)} documents")
             else:
-                logging.info(
-                    f"Updated existing knowledge base {kb_id}, now contains {len(all_documents)} documents"
-                )
+                logging.info(f"Updated existing knowledge base {kb_id}, now contains {len(all_documents)} documents")
 
-        logging.info(
-            f"Retrieved {len(retrieved_docs)} chunks from KB {kb_id} (total: {len(all_documents)} docs)"
-        )
+        logging.info(f"Retrieved {len(retrieved_docs)} chunks from KB {kb_id} (total: {len(all_documents)} docs)")
         return retrieved_docs
     else:
         logging.warning(f"No documents available for retrieval in KB {kb_id}")
@@ -2090,9 +2033,7 @@ def _process_search_results_only(
     if not search_results:
         return []
 
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1500, chunk_overlap=200, add_start_index=True
-    )
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200, add_start_index=True)
 
     search_documents = [
         Document(
@@ -2122,9 +2063,7 @@ def _process_search_results_only(
     #     doc.metadata["retrieved_at"] = datetime.datetime.now().isoformat()
     #     doc.metadata["query"] = query
 
-    logging.info(
-        f"Processed {len(splits)} chunks without local KB, retrieved {len(retrieved_docs)}"
-    )
+    logging.info(f"Processed {len(splits)} chunks without local KB, retrieved {len(retrieved_docs)}")
     return retrieved_docs
 
 

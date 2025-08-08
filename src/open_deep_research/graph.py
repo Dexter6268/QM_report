@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal, cast, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -42,6 +43,22 @@ from open_deep_research.utils import (
     select_and_execute_search,
     get_today_str,
     process_references_from_sections,
+)
+
+
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+project_root = Path(__file__).parent.parent.parent
+logs_dir = project_root / "logs"
+logs_dir.mkdir(exist_ok=True)
+log_dir = logs_dir / f"log_{timestamp}.txt"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(filename)s | %(funcName)s | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    filename=log_dir,
+    encoding="utf-8",
+    filemode="w",
 )
 
 ## Nodes --
@@ -114,7 +131,9 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     query_list = [query.search_query for query in results.queries]
 
     # Search the web with parameters
-    source_str = await select_and_execute_search(search_api, query_list, params_to_pass)
+    source_str = await select_and_execute_search(
+        search_api, query_list, params_to_pass, config=config
+    )
     source_str = await reduce_source_str(source_str, max_tokens=10000)
 
     # Set the planner
@@ -302,16 +321,15 @@ async def search_web(state: SectionState, config: RunnableConfig) -> Dict[str, s
         configurable.search_api_config or {}
     )  # Get the config dict, default to empty
     params_to_pass = get_search_params(search_api, search_api_config)  # Filter parameters
-    max_tokens = configurable.max_tokens
     # Web search
     query_list = [query.search_query for query in search_queries]
 
     # Search the web with parameters
     source_str = await select_and_execute_search(
-        search_api, query_list, params_to_pass, max_tokens=max_tokens
+        search_api, query_list, params_to_pass, config=config
     )
     source_str = await reduce_source_str(
-        source_str, max_tokens=max_tokens
+        source_str, max_tokens=configurable.max_tokens
     )  # Reduce source string if too long
     return {"source_str": source_str, "search_iterations": state["search_iterations"] + 1}
 
@@ -616,7 +634,7 @@ builder = StateGraph(
     ReportState,
     input_schema=ReportStateInput,
     output_schema=ReportStateOutput,
-    config_schema=WorkflowConfiguration,
+    context_schema=WorkflowConfiguration,
 )
 builder.add_node("generate_report_plan", generate_report_plan)
 builder.add_node("human_feedback", human_feedback)

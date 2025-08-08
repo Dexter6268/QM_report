@@ -9,5 +9,8 @@
     "env": "./.env",
     "dependencies": [
       "."
-    ]
+    ],
+    "checkpoint": {
+      "type": "memory"
+    }
   }
