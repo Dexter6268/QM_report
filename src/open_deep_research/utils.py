@@ -50,8 +50,32 @@ from open_deep_research.knowledge_base import KnowledgeBaseManager
 from open_deep_research.configuration import Configuration
 from open_deep_research.state import Section
 from open_deep_research.prompts import SUMMARIZATION_PROMPT
-
+from open_deep_research.prompts import (
+    general_overview,
+    regional_overview,
+    industry_overview,
+    regional_detail,
+    industry_detail,
+)
 import tiktoken
+
+
+def route_prompt(chapter_name, section_name: str) -> str:
+    """Route the prompt to the appropriate section based on chapter and section names."""
+    sys_prompts = {
+        "总体概况": general_overview,
+        "地区概况": regional_overview,
+        "行业概况": industry_overview,
+    }
+    if section_name in sys_prompts:
+        logging.info(f"Routing prompt to system prompt for section: {section_name}")
+        return sys_prompts[section_name]
+
+    chapter_prompts = {"地区产品质量状况": regional_detail, "行业产品质量状况": industry_detail}
+    if chapter_name in chapter_prompts:
+        logging.info(f"Routing prompt to chapter prompt for chapter: {chapter_name}")
+        return chapter_prompts[chapter_name]
+    return ""
 
 
 def get_model(configurable: Configuration, mode: str) -> BaseChatModel:
@@ -1694,7 +1718,7 @@ async def tavily_search(
         return None
 
     configurable = Configuration.from_runnable_config(config)
-    logging.error(f"sum or split in configurable in tavily_search: {configurable.process_search_results}")
+    logging.info(f"sum or split in configurable in tavily_search: {configurable.process_search_results}")
     max_tokens = configurable.max_tokens
     max_char_to_include = 10_000
 

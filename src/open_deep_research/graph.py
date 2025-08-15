@@ -43,6 +43,7 @@ from open_deep_research.utils import (
     select_and_execute_search,
     get_today_str,
     process_references_from_sections,
+    route_prompt,
 )
 
 
@@ -95,9 +96,7 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     report_structure = configurable.report_structure
     number_of_queries = configurable.number_of_queries
     search_api = get_config_value(configurable.search_api)
-    search_api_config = (
-        configurable.search_api_config or {}
-    )  # Get the config dict, default to empty
+    search_api_config = configurable.search_api_config or {}  # Get the config dict, default to empty
     params_to_pass = get_search_params(search_api, search_api_config)  # Filter parameters
 
     # Convert JSON object to string if necessary
@@ -131,9 +130,7 @@ async def generate_report_plan(state: ReportState, config: RunnableConfig):
     query_list = [query.search_query for query in results.queries]
 
     # Search the web with parameters
-    source_str = await select_and_execute_search(
-        search_api, query_list, params_to_pass, config=config
-    )
+    source_str = await select_and_execute_search(search_api, query_list, params_to_pass, config=config)
     source_str = await reduce_source_str(source_str, max_tokens=10000)
 
     # Set the planner
@@ -216,13 +213,9 @@ def human_feedback(
     feedback = interrupt(interrupt_message)
     if isinstance(feedback, dict):
         feedback = list(feedback.values())[0]
-        logging.warning(
-            f"feedback = {feedback}; type = {type(feedback)}"
-        )  # Get the first value if feedback is a dict
+        logging.warning(f"feedback = {feedback}; type = {type(feedback)}")  # Get the first value if feedback is a dict
     # If the user approves the report plan, kick off section writing
-    if (isinstance(feedback, bool) and feedback is True) or (
-        isinstance(feedback, str) and feedback.lower() == "true"
-    ):
+    if (isinstance(feedback, bool) and feedback is True) or (isinstance(feedback, str) and feedback.lower() == "true"):
         # Treat this as approve and kick off section writing
         return Command(
             goto=[
@@ -243,9 +236,7 @@ def human_feedback(
         raise TypeError(f"Interrupt value of type {type(feedback)} is not supported.")
 
 
-async def generate_queries(
-    state: SectionState, config: RunnableConfig
-) -> Dict[str, List[SearchQuery]]:
+async def generate_queries(state: SectionState, config: RunnableConfig) -> Dict[str, List[SearchQuery]]:
     """Generate search queries for researching a specific section.
 
     This node uses an LLM to generate targeted search queries based on the
@@ -317,17 +308,13 @@ async def search_web(state: SectionState, config: RunnableConfig) -> Dict[str, s
     # Get configuration
     configurable = WorkflowConfiguration.from_runnable_config(config)
     search_api = get_config_value(configurable.search_api)
-    search_api_config = (
-        configurable.search_api_config or {}
-    )  # Get the config dict, default to empty
+    search_api_config = configurable.search_api_config or {}  # Get the config dict, default to empty
     params_to_pass = get_search_params(search_api, search_api_config)  # Filter parameters
     # Web search
     query_list = [query.search_query for query in search_queries]
 
     # Search the web with parameters
-    source_str = await select_and_execute_search(
-        search_api, query_list, params_to_pass, config=config
-    )
+    source_str = await select_and_execute_search(search_api, query_list, params_to_pass, config=config)
     source_str = await reduce_source_str(
         source_str, max_tokens=configurable.max_tokens
     )  # Reduce source string if too long
@@ -361,6 +348,10 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command:
     configurable = WorkflowConfiguration.from_runnable_config(config)
 
     # Format system instructions
+    section_writer_instructions_formatted = section_writer_instructions.format(
+        core_requirements=route_prompt(section.chapter_name, section.name)
+    )
+
     section_writer_inputs_formatted = section_writer_inputs.format(
         topic=topic,
         chapter_name=section.chapter_name,
@@ -374,7 +365,7 @@ async def write_section(state: SectionState, config: RunnableConfig) -> Command:
     writer_model = get_model(configurable, "writer")
     section_content = await writer_model.ainvoke(
         [
-            SystemMessage(content=section_writer_instructions),
+            SystemMessage(content=section_writer_instructions_formatted),
             HumanMessage(content=section_writer_inputs_formatted),
         ]
     )
