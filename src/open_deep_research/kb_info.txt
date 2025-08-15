@@ -1,0 +1,6 @@
+loading embeddings...
+embeddings loaded.
+loading knowledge base manager...
+knowledge base manager loaded.
+Knowledge Base Summary:
+====================================================================================================

@@ -5,6 +5,7 @@ import asyncio
 import logging
 import datetime
 import numpy as np
+import threading
 from sklearn.metrics.pairwise import cosine_similarity
 
 
@@ -24,47 +25,124 @@ from langchain_core.vectorstores import VectorStore
 class KnowledgeBaseManager:
     def __init__(self, embeddings: Embeddings):
         self.embeddings = embeddings
-        self.similarity_threshold = 0.75  # 相似度阈值
+        self.similarity_threshold = 0.91  # 相似度阈值
         self.project_root = Path(__file__).parent.parent.parent
         self.kb_dir = self.project_root / "knowledge_base"
         # self.kb_dir.mkdir(exist_ok=True, parents=True)
         self.index_file = self.kb_dir / "kb_index.json"
 
+        # 为文件操作添加异步锁
+        self._index_lock = asyncio.Lock()
+        self._index_thread_lock = threading.Lock()  # 添加线程锁
+        self._kb_locks = {}  # 为每个知识库文件单独加锁
+        self._locks_lock = asyncio.Lock()  # 保护锁字典的锁
+
+    async def _get_kb_lock(self, kb_id: str) -> asyncio.Lock:
+        """获取特定知识库的锁"""
+        async with self._locks_lock:
+            if kb_id not in self._kb_locks:
+                self._kb_locks[kb_id] = asyncio.Lock()
+            return self._kb_locks[kb_id]
+
     async def _load_kb_index(self) -> Dict[str, Any]:
         """加载知识库索引"""
-        if self.index_file.exists():
+        async with self._index_lock:
+            if not self.index_file.exists():
+                return {"knowledge_bases": []}
 
             def read_json():
-                with open(self.index_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                # 使用线程锁保护同步文件操作
+                with self._index_thread_lock:
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            # 确保目录存在
+                            self.kb_dir.mkdir(exist_ok=True, parents=True)
+
+                            # 检查文件是否存在
+                            if not self.index_file.exists():
+                                return {"knowledge_bases": []}
+
+                            # 检查文件权限
+                            if not os.access(self.index_file, os.R_OK):
+                                logging.warning(f"No read permission for {self.index_file}")
+                                return {"knowledge_bases": []}
+
+                            with open(self.index_file, "r", encoding="utf-8") as f:
+                                content = f.read()
+                                if not content.strip():
+                                    return {"knowledge_bases": []}
+                                return json.loads(content)
+
+                        except PermissionError as e:
+                            if attempt < max_retries - 1:
+                                logging.warning(f"Permission denied on attempt {attempt + 1}, retrying...")
+                                time.sleep(0.1 * (attempt + 1))  # 递增等待时间
+                                continue
+                            logging.error(f"Permission denied after {max_retries} attempts: {e}")
+                            return {"knowledge_bases": []}
+                        except json.JSONDecodeError as e:
+                            logging.warning(f"JSON decode error: {e}, returning empty index")
+                            return {"knowledge_bases": []}
+                        except Exception as e:
+                            logging.error(f"Unexpected error reading index: {e}")
+                            if attempt < max_retries - 1:
+                                time.sleep(0.1 * (attempt + 1))
+                                continue
+                            return {"knowledge_bases": []}
+
+                    return {"knowledge_bases": []}
 
             return await asyncio.to_thread(read_json)
-        return {"knowledge_bases": []}
 
     async def _save_kb_index(self, index_data: Dict[str, Any]) -> None:
         """保存知识库索引"""
+        async with self._index_lock:
 
-        def write_json():
-            # 生成唯一的临时文件名
-            timestamp = int(time.time() * 1000000)
-            process_id = os.getpid()
-            temp_file = self.index_file.with_suffix(f".tmp.{process_id}.{timestamp}")
+            def write_json():
+                # 使用线程锁保护同步文件操作
+                with self._index_thread_lock:
+                    # 确保目录存在
+                    self.kb_dir.mkdir(exist_ok=True, parents=True)
 
-            try:
-                # 写入临时文件
-                with open(temp_file, "w", encoding="utf-8") as f:
-                    json.dump(index_data, f, ensure_ascii=False, indent=2)
+                    # 生成唯一的临时文件名
+                    timestamp = int(time.time() * 1000000)
+                    process_id = os.getpid()
+                    thread_id = threading.get_ident()
+                    temp_file = self.index_file.with_suffix(f".tmp.{process_id}.{thread_id}.{timestamp}")
 
-                # 原子性替换
-                temp_file.replace(self.index_file)
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            # 写入临时文件
+                            with open(temp_file, "w", encoding="utf-8") as f:
+                                json.dump(index_data, f, ensure_ascii=False, indent=2)
 
-            except Exception as e:
-                # 清理临时文件
-                if temp_file.exists():
-                    temp_file.unlink()
-                raise e
+                            # 原子性替换
+                            temp_file.replace(self.index_file)
+                            return
 
-        await asyncio.to_thread(write_json)
+                        except PermissionError as e:
+                            if attempt < max_retries - 1:
+                                logging.warning(f"Permission denied writing on attempt {attempt + 1}, retrying...")
+                                if temp_file.exists():
+                                    temp_file.unlink()
+                                time.sleep(0.1 * (attempt + 1))
+                                continue
+                            # 清理临时文件
+                            if temp_file.exists():
+                                temp_file.unlink()
+                            raise e
+                        except Exception as e:
+                            # 清理临时文件
+                            if temp_file.exists():
+                                temp_file.unlink()
+                            if attempt < max_retries - 1:
+                                time.sleep(0.1 * (attempt + 1))
+                                continue
+                            raise e
+
+            await asyncio.to_thread(write_json)
 
     def _compute_query_embedding(self, query: str) -> List[float]:
         """计算查询的向量表示"""
@@ -145,40 +223,83 @@ class KnowledgeBaseManager:
 
     async def save_knowledge_base(self, kb_id: str, vector_store: VectorStore, query: str, documents: List[Document]):
         """保存知识库"""
+        kb_lock = await self._get_kb_lock(kb_id)
+        async with kb_lock:
 
-        def write_pickle():
-            timestamp = int(time.time() * 1000000)
-            process_id = os.getpid()
-            kb_path = self.get_knowledge_base_path(kb_id)
-            temp_path = kb_path.with_suffix(f".tmp.{process_id}.{timestamp}")
+            def write_pickle():
+                # 确保目录存在
+                self.kb_dir.mkdir(exist_ok=True, parents=True)
 
-            save_data = {
-                "vector_store": vector_store,
-                "documents": documents,
-                "kb_id": kb_id,
-                "last_query": query,
-                "updated_at": datetime.datetime.now().isoformat(),
-                "doc_count": len(documents),
-            }
+                timestamp = int(time.time() * 1000000)
+                process_id = os.getpid()
+                thread_id = threading.get_ident()
+                kb_path = self.get_knowledge_base_path(kb_id)
+                temp_path = kb_path.with_suffix(f".tmp.{process_id}.{thread_id}.{timestamp}")
+
+                save_data = {
+                    "vector_store": vector_store,
+                    "documents": documents,
+                    "kb_id": kb_id,
+                    "last_query": query,
+                    "updated_at": datetime.datetime.now().isoformat(),
+                    "doc_count": len(documents),
+                }
+
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        # 写入临时文件
+                        with open(temp_path, "wb") as f:
+                            pickle.dump(save_data, f)
+
+                        # Windows 下的安全替换操作
+                        if kb_path.exists():
+                            # 如果目标文件存在，先备份再替换
+                            backup_path = kb_path.with_suffix(f".bak.{timestamp}")
+                            try:
+                                kb_path.rename(backup_path)
+                                temp_path.rename(kb_path)
+                                # 删除备份文件
+                                backup_path.unlink()
+                            except Exception as e:
+                                # 如果替换失败，恢复备份
+                                if backup_path.exists():
+                                    backup_path.rename(kb_path)
+                                raise e
+                        else:
+                            # 目标文件不存在，直接重命名
+                            temp_path.rename(kb_path)
+
+                        logging.info(f"Successfully saved knowledge base {kb_id}")
+                        return
+
+                    except PermissionError as e:
+                        if attempt < max_retries - 1:
+                            logging.warning(f"Permission denied on attempt {attempt + 1}, retrying...")
+                            # 清理临时文件
+                            if temp_path.exists():
+                                temp_path.unlink()
+                            time.sleep(0.2 * (attempt + 1))  # 递增等待时间
+                            continue
+                        logging.error(f"Permission denied after {max_retries} attempts: {e}")
+                        raise e
+                    except Exception as e:
+                        # 清理临时文件
+                        if temp_path.exists():
+                            temp_path.unlink()
+                        if attempt < max_retries - 1:
+                            time.sleep(0.1 * (attempt + 1))
+                            continue
+                        logging.error(f"Failed to save knowledge base: {e}")
+                        raise e
 
             try:
-                with open(temp_path, "wb") as f:
-                    pickle.dump(save_data, f)
-
-                # 原子性替换
-                temp_path.replace(kb_path)
+                await asyncio.to_thread(write_pickle)
+                await self.update_knowledge_base_info(kb_id, query, len(documents))
 
             except Exception as e:
-                if temp_path.exists():
-                    temp_path.unlink()
+                logging.error(f"Failed to save knowledge base {kb_id}: {e}")
                 raise e
-
-        try:
-            await asyncio.to_thread(write_pickle)
-            await self.update_knowledge_base_info(kb_id, query, len(documents))
-            logging.info(f"Knowledge base {kb_id} saved with {len(documents)} documents")
-        except Exception as e:
-            logging.error(f"Failed to save knowledge base {kb_id}: {e}")
 
     async def load_or_create_knowledge_base(
         self, query: str
@@ -196,24 +317,21 @@ class KnowledgeBaseManager:
             kb_id, similarity = match_result
             logging.info(f"Found matching knowledge base {kb_id} with similarity {similarity:.3f}")
 
-            # 加载现有知识库
-            kb_path = self.get_knowledge_base_path(kb_id)
-            if kb_path.exists():
-                try:
-                    save_data = await asyncio.to_thread(lambda: pickle.load(open(kb_path, "rb")))
+            kb_lock = await self._get_kb_lock(kb_id)
+            async with kb_lock:
+                # 加载现有知识库
+                kb_path = self.get_knowledge_base_path(kb_id)
+                if kb_path.exists():
+                    try:
+                        save_data = await asyncio.to_thread(lambda: pickle.load(open(kb_path, "rb")))
 
-                    vector_store = save_data["vector_store"]
-                    documents = save_data["documents"]
+                        vector_store = save_data["vector_store"]
+                        documents = save_data["documents"]
 
-                    logging.info(f"Loaded existing knowledge base {kb_id} with {len(documents)} documents")
-                    return (
-                        vector_store,
-                        documents,
-                        kb_id,
-                        False,
-                    )  # is_new = False，表示使用现有知识库
-                except Exception as e:
-                    logging.error(f"Failed to load knowledge base {kb_id}: {e}")
+                        logging.info(f"Loaded existing knowledge base {kb_id} with {len(documents)} documents")
+                        return (vector_store, documents, kb_id, False)  # is_new = False，表示使用现有知识库
+                    except Exception as e:
+                        logging.error(f"Failed to load knowledge base {kb_id}: {e}")
 
         # 创建新知识库
         kb_id = await self.create_knowledge_base(query)
@@ -436,6 +554,11 @@ class KnowledgeBaseManager:
 
 
 if __name__ == "__main__":
-    embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh")
+    print("loading embeddings...")
+    embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh", model_kwargs={"local_files_only": True})
+    print("embeddings loaded.")
+    print("loading knowledge base manager...")
     kbm = KnowledgeBaseManager(embeddings)
+    print("knowledge base manager loaded.")
+    print("Knowledge Base Summary:")
     asyncio.run(kbm.print_all_knowledge_bases(show_full_content=True, max_url_num=50))
